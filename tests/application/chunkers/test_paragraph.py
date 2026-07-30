@@ -4,6 +4,7 @@ from app.domain.document import SourceDocument
 
 def test_chunk_document_by_paragraphs() -> None:
     document = SourceDocument(
+        document_id="document-001",
         title="예금 기초",
         content="첫 번째 문단.\n\n두 번째 문단.\n   \n세 번째 문단.\n\n",
         source="deposit.txt",
@@ -12,6 +13,12 @@ def test_chunk_document_by_paragraphs() -> None:
     chunks = ParagraphChunker().chunk(document)
 
     assert [chunk.sequence for chunk in chunks] == [0, 1, 2]
+    assert all(chunk.document_id == "document-001" for chunk in chunks)
+    assert [chunk.chunk_key for chunk in chunks] == [
+        "document-001:0",
+        "document-001:1",
+        "document-001:2",
+    ]
     assert [chunk.content for chunk in chunks] == [
         "첫 번째 문단.",
         "두 번째 문단.",
@@ -23,6 +30,7 @@ def test_chunk_document_by_paragraphs() -> None:
 
 def test_preserve_single_line_break_inside_paragraph() -> None:
     document = SourceDocument(
+        document_id="document-001",
         title="예금 기초",
         content="첫 번째 줄.\n같은 문단의 두 번째 줄.",
         source="deposit.txt",
@@ -36,6 +44,7 @@ def test_preserve_single_line_break_inside_paragraph() -> None:
 
 def test_ignore_empty_content() -> None:
     document = SourceDocument(
+        document_id="document-001",
         title="빈 문서",
         content="  \n\n\t\n  ",
         source="empty.txt",

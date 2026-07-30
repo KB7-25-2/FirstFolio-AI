@@ -114,6 +114,11 @@ AI 서버가 생성한 콘텐츠는 구조화된 JSON으로 Spring 서버에 전
 
 MySQL 청크, BM25 결과와 FAISS 결과는 공통 `chunk_key`로 연결합니다.
 
+현재 구현에서는 원문을 `document_id`로 구분하고, 청크 식별자는
+`{document_id}:{sequence}` 형식으로 생성합니다. 개발 및 테스트 단계에서는
+`ChunkRepository` 인터페이스와 메모리 구현체를 사용하며, 운영용 MySQL 저장소는
+아직 연결하지 않았습니다. 메모리 저장소의 데이터는 서버가 종료되면 사라집니다.
+
 ## 프로젝트 구조
 
 ```text
@@ -123,6 +128,8 @@ firstfolio-ai/
 │   ├── application/
 │   │   ├── chunkers/
 │   │   │   └── paragraph.py    # 일반 텍스트 문단 청커
+│   │   ├── ports/
+│   │   │   └── chunk_repository.py # 청크 저장소 인터페이스
 │   │   └── search/
 │   │       └── bm25_pipeline.py # BM25 검색 통합 파이프라인
 │   ├── core/
@@ -134,6 +141,8 @@ firstfolio-ai/
 │   ├── infrastructure/
 │   │   ├── document_loaders/
 │   │   │   └── text.py         # 일반 텍스트 문서 로더
+│   │   ├── repositories/
+│   │   │   └── in_memory_chunk.py # 메모리 청크 저장소
 │   │   ├── search/
 │   │   │   └── bm25.py         # BM25 키워드 검색
 │   │   └── tokenizers/
@@ -152,6 +161,8 @@ firstfolio-ai/
 │   └── infrastructure/
 │       ├── document_loaders/
 │       │   └── test_text.py
+│       ├── repositories/
+│       │   └── test_in_memory_chunk.py
 │       ├── search/
 │       │   └── test_bm25.py
 │       └── tokenizers/
@@ -305,14 +316,15 @@ docker compose exec ai-api ruff format .
 - 지원하지 않는 문서 확장자 처리
 - 내용이 없는 문서 처리
 - 일반 텍스트의 문단 단위 분리
-- 문단 순서와 원문 메타데이터 보존
+- 문단 순서, 문서 ID와 청크 식별자 보존
 - 빈 문단 제외와 문단 내부 줄바꿈 보존
+- 메모리 청크 저장·교체·식별자 순서 조회
 - 검색 결과 개수의 기본값·환경 변수·유효성 검사
 - Kiwi 기반 한국어 금융 문장 토큰화
 - 영문 검색어 소문자 변환과 빈 검색어 처리
 - BM25 관련 청크 순위와 상위 결과 개수 제한
 - 무관한 검색어와 잘못된 BM25 입력 처리
-- 텍스트 파일 로드부터 BM25 검색까지의 통합 흐름
+- 텍스트 파일 로드, 청크 저장부터 BM25 검색까지의 통합 흐름
 - 색인 생성 전 검색 요청 처리와 환경 설정 적용
 
 ### 향후 테스트 범위
@@ -476,7 +488,7 @@ Issue에는 다음 내용을 작성합니다.
 
 ## 현재 상태
 
-FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹과 Kiwi 기반 BM25 키워드 검색 통합 파이프라인을 완료했습니다.
+FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹, 문서·청크 식별자, 청크 저장소 인터페이스와 Kiwi 기반 BM25 키워드 검색 통합 파이프라인을 완료했습니다.
 
 초기 구축 순서:
 
@@ -490,6 +502,7 @@ FastAPI 기본 서버 완료
 → 일반 텍스트 문서 로더 완료
 → 기본 문단 기반 청킹 완료
 → Kiwi 기반 BM25 키워드 검색 파이프라인 완료
+→ 문서·청크 식별자 및 청크 저장소 인터페이스 완료
 → FAISS 검색
 → 하이브리드 검색
 → 콘텐츠 생성

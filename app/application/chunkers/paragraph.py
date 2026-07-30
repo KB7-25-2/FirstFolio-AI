@@ -16,6 +16,8 @@ class ParagraphChunker:
 
         return [
             DocumentChunk(
+                document_id=document.document_id,
+                chunk_key=f"{document.document_id}:{sequence}",
                 sequence=sequence,
                 content=content,
                 title=document.title,

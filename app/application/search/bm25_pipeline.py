@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from app.application.chunkers.paragraph import ParagraphChunker
+from app.application.ports.chunk_repository import ChunkRepository
 from app.core.config import Settings
 from app.domain.search import SearchResult
 from app.infrastructure.document_loaders.text import TextDocumentLoader
@@ -12,21 +13,35 @@ class SearchIndexNotBuiltError(RuntimeError):
     pass
 
 
-# 파이프라인 구성
 class BM25SearchPipeline:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        chunk_repository: ChunkRepository,
+    ) -> None:
         self._top_k = settings.search_top_k
-        self._loader = TextDocumentLoader()  # 파일 읽기
-        self._chunker = ParagraphChunker()  # 문단 분리
-        self._tokenizer = KiwiTokenizer()  # 형태소 분석
-        self._search_engine: BM25Search | None = None  # 검색 점수 계산
+        self._chunk_repository = chunk_repository
+        self._loader = TextDocumentLoader()
+        self._chunker = ParagraphChunker()
+        self._tokenizer = KiwiTokenizer()
+        self._search_engine: BM25Search | None = None
 
-    def build_index(self, path: str | Path) -> int:
-        document = self._loader.load(path)
+    def build_index(
+        self,
+        path: str | Path,
+        document_id: str,
+    ) -> int:
+        document = self._loader.load(
+            path,
+            document_id=document_id,
+        )
         chunks = self._chunker.chunk(document)
 
+        self._chunk_repository.save_all(chunks)
+        stored_chunks = self._chunk_repository.find_all()
+
         self._search_engine = BM25Search(
-            chunks=chunks,
+            chunks=stored_chunks,
             tokenizer=self._tokenizer,
         )
 
