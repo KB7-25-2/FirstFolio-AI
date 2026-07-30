@@ -120,9 +120,12 @@ MySQL 청크, BM25 결과와 FAISS 결과는 공통 `chunk_key`로 연결합니�
 firstfolio-ai/
 ├── app/
 │   ├── api/                    # FastAPI 라우터
-│   ├── application/            # 서비스와 유스케이스
+│   ├── application/
+│   │   └── chunkers/
+│   │       └── paragraph.py    # 일반 텍스트 문단 청커
 │   ├── core/                   # 환경설정
 │   ├── domain/
+│   │   ├── chunk.py            # 문서 청크 도메인 모델
 │   │   └── document.py         # 원문 문서 도메인 모델
 │   ├── infrastructure/
 │   │   └── document_loaders/
@@ -131,6 +134,9 @@ firstfolio-ai/
 ├── tests/
 │   ├── api/
 │   │   └── test_health.py
+│   ├── application/
+│   │   └── chunkers/
+│   │       └── test_paragraph.py
 │   └── infrastructure/
 │       └── document_loaders/
 │           └── test_text.py
@@ -267,6 +273,9 @@ docker compose exec ai-api ruff format .
 - 디렉터리 경로 입력 처리
 - 지원하지 않는 문서 확장자 처리
 - 내용이 없는 문서 처리
+- 일반 텍스트의 문단 단위 분리
+- 문단 순서와 원문 메타데이터 보존
+- 빈 문단 제외와 문단 내부 줄바꿈 보존
 
 ### 향후 테스트 범위
 
@@ -431,7 +440,7 @@ Issue에는 다음 내용을 작성합니다.
 
 ## 현재 상태
 
-FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI와 일반 텍스트 문서 로더의 초기 구성을 완료했습니다.
+FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI, 일반 텍스트 문서 로더와 기본 문단 기반 청킹을 완료했습니다.
 
 초기 구축 순서:
 
@@ -443,7 +452,7 @@ FastAPI 기본 서버 완료
 → Ruff 설정 완료
 → GitHub Actions CI 구성 완료
 → 일반 텍스트 문서 로더 완료
-→ 청킹
+→ 기본 문단 기반 청킹 완료
 → BM25 검색
 → FAISS 검색
 → 하이브리드 검색
