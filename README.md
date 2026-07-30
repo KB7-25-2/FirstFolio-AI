@@ -122,12 +122,18 @@ firstfolio-ai/
 │   ├── api/                    # FastAPI 라우터
 │   ├── application/            # 서비스와 유스케이스
 │   ├── core/                   # 환경설정
-│   ├── domain/                 # 도메인 모델
-│   ├── infrastructure/         # 외부 시스템 연동
+│   ├── domain/
+│   │   └── document.py         # 원문 문서 도메인 모델
+│   ├── infrastructure/
+│   │   └── document_loaders/
+│   │       └── text.py         # 일반 텍스트 문서 로더
 │   └── main.py                 # FastAPI 실행 진입점
 ├── tests/
-│   └── api/
-│       └── test_health.py
+│   ├── api/
+│   │   └── test_health.py
+│   └── infrastructure/
+│       └── document_loaders/
+│           └── test_text.py
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
@@ -256,6 +262,11 @@ docker compose exec ai-api ruff format .
 ### 현재 테스트
 
 - FastAPI `/health` 요청·응답
+- UTF-8 텍스트 문서 로드
+- 존재하지 않는 문서 경로 처리
+- 디렉터리 경로 입력 처리
+- 지원하지 않는 문서 확장자 처리
+- 내용이 없는 문서 처리
 
 ### 향후 테스트 범위
 
@@ -420,7 +431,7 @@ Issue에는 다음 내용을 작성합니다.
 
 ## 현재 상태
 
-FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff와 GitHub Actions CI의 초기 구성을 완료했습니다. GitHub Actions의 원격 실행은 Pull Request에서 최종 확인합니다.
+FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI와 일반 텍스트 문서 로더의 초기 구성을 완료했습니다.
 
 초기 구축 순서:
 
@@ -431,7 +442,7 @@ FastAPI 기본 서버 완료
 → 자동 테스트 완료
 → Ruff 설정 완료
 → GitHub Actions CI 구성 완료
-→ 문서 로더
+→ 일반 텍스트 문서 로더 완료
 → 청킹
 → BM25 검색
 → FAISS 검색
