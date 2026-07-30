@@ -121,8 +121,10 @@ firstfolio-ai/
 ├── app/
 │   ├── api/                    # FastAPI 라우터
 │   ├── application/
-│   │   └── chunkers/
-│   │       └── paragraph.py    # 일반 텍스트 문단 청커
+│   │   ├── chunkers/
+│   │   │   └── paragraph.py    # 일반 텍스트 문단 청커
+│   │   └── search/
+│   │       └── bm25_pipeline.py # BM25 검색 통합 파이프라인
 │   ├── core/
 │   │   └── config.py           # 환경설정
 │   ├── domain/
@@ -141,8 +143,10 @@ firstfolio-ai/
 │   ├── api/
 │   │   └── test_health.py
 │   ├── application/
-│   │   └── chunkers/
-│   │       └── test_paragraph.py
+│   │   ├── chunkers/
+│   │   │   └── test_paragraph.py
+│   │   └── search/
+│   │       └── test_bm25_pipeline.py
 │   ├── core/
 │   │   └── test_config.py
 │   └── infrastructure/
@@ -152,6 +156,8 @@ firstfolio-ai/
 │       │   └── test_bm25.py
 │       └── tokenizers/
 │           └── test_kiwi.py
+├── data/
+│   └── local/                  # Git에서 제외하는 로컬 비공개 문서
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
@@ -240,6 +246,16 @@ docker compose up -d --build
 docker compose ps
 ```
 
+### 로컬 비공개 문서
+
+개발 중 사용하는 비공개 원문은 다음 경로에 저장합니다.
+
+```text
+data/local/raw/
+```
+
+`data/local/`은 Git에서 제외하며 Docker 컨테이너의 `/app/data/local`에 읽기 전용으로 연결합니다. 실제 원문은 자동 테스트와 CI에서 사용하지 않습니다.
+
 ### 로그 확인
 
 ```bash
@@ -296,6 +312,8 @@ docker compose exec ai-api ruff format .
 - 영문 검색어 소문자 변환과 빈 검색어 처리
 - BM25 관련 청크 순위와 상위 결과 개수 제한
 - 무관한 검색어와 잘못된 BM25 입력 처리
+- 텍스트 파일 로드부터 BM25 검색까지의 통합 흐름
+- 색인 생성 전 검색 요청 처리와 환경 설정 적용
 
 ### 향후 테스트 범위
 
@@ -458,7 +476,7 @@ Issue에는 다음 내용을 작성합니다.
 
 ## 현재 상태
 
-FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹, Kiwi 토큰화와 인메모리 BM25 검색을 완료했습니다.
+FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹과 Kiwi 기반 BM25 키워드 검색 통합 파이프라인을 완료했습니다.
 
 초기 구축 순서:
 
@@ -471,7 +489,7 @@ FastAPI 기본 서버 완료
 → GitHub Actions CI 구성 완료
 → 일반 텍스트 문서 로더 완료
 → 기본 문단 기반 청킹 완료
-→ Kiwi 토큰화와 BM25 검색 완료
+→ Kiwi 기반 BM25 키워드 검색 파이프라인 완료
 → FAISS 검색
 → 하이브리드 검색
 → 콘텐츠 생성
