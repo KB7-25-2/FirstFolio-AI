@@ -24,3 +24,6 @@ htmlcov/
 /AGENTS.md
 /AI_DESIGN.md
 /PROJECT_SPEC.md
+
+# Local private documents
+/data/local/
