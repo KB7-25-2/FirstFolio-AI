@@ -123,13 +123,19 @@ firstfolio-ai/
 │   ├── application/
 │   │   └── chunkers/
 │   │       └── paragraph.py    # 일반 텍스트 문단 청커
-│   ├── core/                   # 환경설정
+│   ├── core/
+│   │   └── config.py           # 환경설정
 │   ├── domain/
 │   │   ├── chunk.py            # 문서 청크 도메인 모델
-│   │   └── document.py         # 원문 문서 도메인 모델
+│   │   ├── document.py         # 원문 문서 도메인 모델
+│   │   └── search.py           # 검색 결과 도메인 모델
 │   ├── infrastructure/
-│   │   └── document_loaders/
-│   │       └── text.py         # 일반 텍스트 문서 로더
+│   │   ├── document_loaders/
+│   │   │   └── text.py         # 일반 텍스트 문서 로더
+│   │   ├── search/
+│   │   │   └── bm25.py         # BM25 키워드 검색
+│   │   └── tokenizers/
+│   │       └── kiwi.py         # Kiwi 한국어 토크나이저
 │   └── main.py                 # FastAPI 실행 진입점
 ├── tests/
 │   ├── api/
@@ -137,9 +143,15 @@ firstfolio-ai/
 │   ├── application/
 │   │   └── chunkers/
 │   │       └── test_paragraph.py
+│   ├── core/
+│   │   └── test_config.py
 │   └── infrastructure/
-│       └── document_loaders/
-│           └── test_text.py
+│       ├── document_loaders/
+│       │   └── test_text.py
+│       ├── search/
+│       │   └── test_bm25.py
+│       └── tokenizers/
+│           └── test_kiwi.py
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
@@ -165,6 +177,8 @@ AI 서버 실행에 필요한 패키지를 관리합니다.
 fastapi
 uvicorn
 pydantic-settings
+kiwipiepy
+rank-bm25
 ```
 
 ### requirements-dev.txt
@@ -195,6 +209,7 @@ cp .env.example .env
 ```dotenv
 APP_ENV=local
 APP_PORT=8000
+SEARCH_TOP_K=5
 
 OPENAI_API_KEY=
 
@@ -276,13 +291,16 @@ docker compose exec ai-api ruff format .
 - 일반 텍스트의 문단 단위 분리
 - 문단 순서와 원문 메타데이터 보존
 - 빈 문단 제외와 문단 내부 줄바꿈 보존
+- 검색 결과 개수의 기본값·환경 변수·유효성 검사
+- Kiwi 기반 한국어 금융 문장 토큰화
+- 영문 검색어 소문자 변환과 빈 검색어 처리
+- BM25 관련 청크 순위와 상위 결과 개수 제한
+- 무관한 검색어와 잘못된 BM25 입력 처리
 
 ### 향후 테스트 범위
 
 - 문서 전처리
 - 문서 유형별 청킹
-- Kiwi 토큰화
-- BM25 검색
 - FAISS 벡터 검색
 - 하이브리드 검색
 - 프롬프트 입력 구성
@@ -440,7 +458,7 @@ Issue에는 다음 내용을 작성합니다.
 
 ## 현재 상태
 
-FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI, 일반 텍스트 문서 로더와 기본 문단 기반 청킹을 완료했습니다.
+FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹, Kiwi 토큰화와 인메모리 BM25 검색을 완료했습니다.
 
 초기 구축 순서:
 
@@ -453,7 +471,7 @@ FastAPI 기본 서버 완료
 → GitHub Actions CI 구성 완료
 → 일반 텍스트 문서 로더 완료
 → 기본 문단 기반 청킹 완료
-→ BM25 검색
+→ Kiwi 토큰화와 BM25 검색 완료
 → FAISS 검색
 → 하이브리드 검색
 → 콘텐츠 생성
