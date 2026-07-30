@@ -119,24 +119,15 @@ MySQL 청크, BM25 결과와 FAISS 결과는 공통 `chunk_key`로 연결합니�
 ```text
 firstfolio-ai/
 ├── app/
-│   ├── api/                    # FastAPI 라우터와 요청·응답 모델
-│   ├── application/            # 기능별 서비스와 유스케이스
-│   ├── domain/                 # 문서, 청크, 검색 결과 도메인 모델
-│   ├── infrastructure/         # OpenAI, MySQL, S3, FAISS 연동
-│   ├── pipelines/
-│   │   ├── indexing/           # 문서 전처리·청킹·색인
-│   │   ├── retrieval/          # BM25·벡터·하이브리드 검색
-│   │   └── generation/         # 문제·레터·피드백 생성
-│   ├── prompts/                # 기능별 프롬프트
-│   ├── evaluation/             # 검색 및 생성 품질 평가
-│   ├── core/                   # 환경설정, 예외 처리, 로깅
+│   ├── api/                    # FastAPI 라우터
+│   ├── application/            # 서비스와 유스케이스
+│   ├── core/                   # 환경설정
+│   ├── domain/                 # 도메인 모델
+│   ├── infrastructure/         # 외부 시스템 연동
 │   └── main.py                 # FastAPI 실행 진입점
-├── tests/                      # 자동 테스트
-├── scripts/                    # 색인·평가·운영 보조 스크립트
-├── data/
-│   ├── raw/                    # 로컬 테스트용 원문
-│   └── vector_store/           # 로컬 FAISS 인덱스
-├── docs/                       # AI API 계약 및 설계 문서
+├── tests/
+│   └── api/
+│       └── test_health.py
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
@@ -144,6 +135,7 @@ firstfolio-ai/
 ├── .gitignore
 ├── Dockerfile
 ├── docker-compose.yml
+├── pyproject.toml
 ├── requirements.txt
 ├── requirements-dev.txt
 └── README.md
@@ -160,10 +152,6 @@ AI 서버 실행에 필요한 패키지를 관리합니다.
 ```txt
 fastapi
 uvicorn
-langchain
-openai
-faiss-cpu
-kiwipiepy
 pydantic-settings
 ```
 
@@ -173,8 +161,7 @@ pydantic-settings
 
 ```txt
 pytest
-pytest-asyncio
-httpx
+httpx2
 ruff
 ```
 
@@ -203,7 +190,7 @@ DATABASE_URL=
 
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
-AWS_REGION=
+AWS_REGION=ap-northeast-2
 S3_BUCKET_NAME=
 
 SPRING_API_BASE_URL=
@@ -243,7 +230,7 @@ docker compose down
 ### 전체 테스트 실행
 
 ```bash
-docker compose exec ai-api pytest
+docker compose exec ai-api python -m pytest
 ```
 
 ### 코드 검사
@@ -265,6 +252,12 @@ docker compose exec ai-api ruff format .
 ```
 
 ## 테스트 범위
+
+### 현재 테스트
+
+- FastAPI `/health` 요청·응답
+
+### 향후 테스트 범위
 
 - 문서 전처리
 - 문서 유형별 청킹
@@ -427,16 +420,17 @@ Issue에는 다음 내용을 작성합니다.
 
 ## 현재 상태
 
-프로젝트 초기 환경과 AI 서버 기본 구조를 구성하는 단계입니다.
+FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff와 GitHub Actions CI의 초기 구성을 완료했습니다. GitHub Actions의 원격 실행은 Pull Request에서 최종 확인합니다.
 
 초기 구축 순서:
 
 ```text
-FastAPI 기본 서버
-→ Docker 개발 환경
-→ 환경 변수 설정
-→ 자동 테스트
-→ GitHub Actions CI
+FastAPI 기본 서버 완료
+→ Docker 개발 환경 완료
+→ 환경 변수 설정 완료
+→ 자동 테스트 완료
+→ Ruff 설정 완료
+→ GitHub Actions CI 구성 완료
 → 문서 로더
 → 청킹
 → BM25 검색

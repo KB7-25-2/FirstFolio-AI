@@ -1,0 +1,26 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Test and lint caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environment variables
+.env
+
+# IDE and operating system
+.idea/
+.vscode/
+.DS_Store
+
+# Local Codex documents
+/AGENTS.md
+/AI_DESIGN.md
+/PROJECT_SPEC.md
