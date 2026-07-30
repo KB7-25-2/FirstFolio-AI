@@ -16,7 +16,7 @@ class TextDocumentLoader:
 
     supported_suffix = ".txt"
 
-    def load(self, path: str | Path) -> SourceDocument:
+    def load(self, path: str | Path, document_id: str) -> SourceDocument:
         file_path = Path(path)
 
         if not file_path.exists():
@@ -36,6 +36,7 @@ class TextDocumentLoader:
             raise EmptyDocumentError(f"문서에 내용이 없습니다: {file_path}")
 
         return SourceDocument(
+            document_id=document_id,
             title=file_path.stem,
             content=content,
             source=str(file_path),

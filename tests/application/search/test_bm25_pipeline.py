@@ -7,6 +7,9 @@ from app.application.search.bm25_pipeline import (
     SearchIndexNotBuiltError,
 )
 from app.core.config import Settings
+from app.infrastructure.repositories.in_memory_chunk import (
+    InMemoryChunkRepository,
+)
 
 
 def test_build_index_and_search(
@@ -27,13 +30,23 @@ def test_build_index_and_search(
         search_top_k=1,
         _env_file=None,
     )
-    pipeline = BM25SearchPipeline(settings)
+    repository = InMemoryChunkRepository()
+    pipeline = BM25SearchPipeline(
+        settings,
+        chunk_repository=repository,
+    )
 
-    chunk_count = pipeline.build_index(file_path)
+    chunk_count = pipeline.build_index(
+        file_path,
+        document_id="financial-guide",
+    )
     results = pipeline.search("예금 금리")
 
     assert chunk_count == 4
+    assert len(repository.find_all()) == 4
     assert len(results) == 1
+    assert results[0].chunk.document_id == "financial-guide"
+    assert results[0].chunk.chunk_key == "financial-guide:0"
     assert results[0].chunk.sequence == 0
     assert results[0].score > 0
     assert pipeline.search("부동산 임대") == []
@@ -44,7 +57,11 @@ def test_reject_search_before_building_index() -> None:
         search_top_k=1,
         _env_file=None,
     )
-    pipeline = BM25SearchPipeline(settings)
+    repository = InMemoryChunkRepository()
+    pipeline = BM25SearchPipeline(
+        settings,
+        chunk_repository=repository,
+    )
 
     with pytest.raises(
         SearchIndexNotBuiltError,

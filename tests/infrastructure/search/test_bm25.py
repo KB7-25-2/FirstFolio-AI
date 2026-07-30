@@ -16,25 +16,33 @@ def bm25_search(
 ) -> BM25Search:
     chunks = [
         DocumentChunk(
+            document_id="deposit",
+            chunk_key="deposit:0",
             sequence=0,
             content="예금은 돈을 맡기고 금리를 받는 금융상품이다.",
             title="예금",
             source="deposit.txt",
         ),
         DocumentChunk(
-            sequence=1,
+            document_id="stock",
+            chunk_key="stock:0",
+            sequence=0,
             content="주식은 기업의 지분을 나타내는 금융상품이다.",
             title="주식",
             source="stock.txt",
         ),
         DocumentChunk(
-            sequence=2,
+            document_id="bond",
+            chunk_key="bond:0",
+            sequence=0,
             content="채권은 발행자에게 돈을 빌려주고 이자를 받는 상품이다.",
             title="채권",
             source="bond.txt",
         ),
         DocumentChunk(
-            sequence=3,
+            document_id="fund",
+            chunk_key="fund:0",
+            sequence=0,
             content="펀드는 여러 자산에 분산 투자하는 상품이다.",
             title="펀드",
             source="fund.txt",
@@ -58,6 +66,8 @@ def test_search_relevant_chunk_first(
     assert results
     assert results[0].chunk.title == "예금"
     assert results[0].score > 0
+    assert results[0].chunk.document_id == "deposit"
+    assert results[0].chunk.chunk_key == "deposit:0"
 
 
 def test_limit_search_results(
@@ -116,6 +126,8 @@ def test_reject_chunk_collection_without_search_tokens(
 ) -> None:
     chunks = [
         DocumentChunk(
+            document_id="punctuation",
+            chunk_key="punctuation:0",
             sequence=0,
             content="... !!!",
             title="문장부호",
