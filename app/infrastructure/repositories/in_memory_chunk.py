@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 
+from app.application.ports.chunk_repository import ChunkNotFoundError
 from app.domain.chunk import DocumentChunk
 
 
@@ -40,8 +41,15 @@ class InMemoryChunkRepository:
         self,
         chunk_keys: Sequence[str],
     ) -> list[DocumentChunk]:
-        return [
-            self._chunks_by_key[chunk_key]
+        missing_chunk_keys = [
+            chunk_key
             for chunk_key in chunk_keys
-            if chunk_key in self._chunks_by_key
+            if chunk_key not in self._chunks_by_key
         ]
+
+        if missing_chunk_keys:
+            missing_keys = ", ".join(missing_chunk_keys)
+
+            raise ChunkNotFoundError(f"요청한 청크를 찾을 수 없습니다: {missing_keys}")
+
+        return [self._chunks_by_key[chunk_key] for chunk_key in chunk_keys]
