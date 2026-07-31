@@ -7,3 +7,9 @@ from app.domain.chunk import DocumentChunk
 class SearchResult:
     chunk: DocumentChunk
     score: float
+
+
+@dataclass(frozen=True, slots=True)
+class VectorSearchResult:
+    chunk_key: str
+    score: float

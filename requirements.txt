@@ -4,3 +4,5 @@ pydantic-settings
 kiwipiepy
 rank-bm25
 langchain-openai
+numpy
+faiss-cpu
