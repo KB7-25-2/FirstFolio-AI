@@ -11,6 +11,13 @@ class ChunkRepository(Protocol):
         chunks: Sequence[DocumentChunk],
     ) -> None: ...
 
+    # 같은 문서의 기존 청크를 새로운 청크로 교체
+    def replace_document_chunks(
+        self,
+        document_id: str,
+        chunks: Sequence[DocumentChunk],
+    ) -> None: ...
+
     # 전체 청크를 불러와 BM25 색인 재구축
     def find_all(self) -> list[DocumentChunk]: ...
 
