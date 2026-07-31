@@ -153,6 +153,11 @@ MySQL 청크, BM25 결과와 FAISS 결과는 공통 `chunk_key`로 연결합니�
 BM25 인덱스를 무효화하며, 문서 처리 중 오류가 발생하면 기존 인덱스를
 유지합니다.
 
+임베딩은 애플리케이션의 `EmbeddingClient` 인터페이스를 통해 사용합니다.
+자동 테스트에서는 LangChain의 결정적 테스트 대역을 사용하고, 실제 실행에서는
+`OpenAIEmbeddingClient`가 `text-embedding-3-small` 모델을 호출합니다.
+임베딩 모델명은 `EMBEDDING_MODEL` 환경변수로 관리합니다.
+
 ## 프로젝트 구조
 
 ```text
@@ -163,7 +168,8 @@ firstfolio-ai/
 │   │   ├── chunkers/
 │   │   │   └── paragraph.py    # 일반 텍스트 문단 청커
 │   │   ├── ports/
-│   │   │   └── chunk_repository.py # 청크 저장소 인터페이스
+│   │   │   ├── chunk_repository.py # 청크 저장소 인터페이스
+│   │   │   └── embedding.py    # 임베딩 인터페이스
 │   │   └── search/
 │   │       └── bm25_pipeline.py # BM25 검색 통합 파이프라인
 │   ├── core/
@@ -175,6 +181,7 @@ firstfolio-ai/
 │   ├── infrastructure/
 │   │   ├── document_loaders/
 │   │   │   └── text.py         # 일반 텍스트 문서 로더
+│   │   ├── openai_embedding.py  # LangChain OpenAI 임베딩 어댑터
 │   │   ├── repositories/
 │   │   │   └── in_memory_chunk.py # 메모리 청크 저장소
 │   │   ├── search/
@@ -186,6 +193,7 @@ firstfolio-ai/
 │   ├── api/
 │   │   └── test_health.py
 │   ├── application/
+│   │   ├── test_embedding.py
 │   │   ├── chunkers/
 │   │   │   └── test_paragraph.py
 │   │   └── search/
@@ -193,6 +201,7 @@ firstfolio-ai/
 │   ├── core/
 │   │   └── test_config.py
 │   └── infrastructure/
+│       ├── test_openai_embedding.py
 │       ├── document_loaders/
 │       │   └── test_text.py
 │       ├── repositories/
@@ -230,6 +239,7 @@ uvicorn
 pydantic-settings
 kiwipiepy
 rank-bm25
+langchain-openai
 ```
 
 ### requirements-dev.txt
@@ -261,6 +271,7 @@ cp .env.example .env
 APP_ENV=local
 APP_PORT=8000
 SEARCH_TOP_K=5
+EMBEDDING_MODEL=text-embedding-3-small
 
 OPENAI_API_KEY=
 
@@ -339,6 +350,30 @@ docker compose exec ai-api ruff format --check .
 docker compose exec ai-api ruff format .
 ```
 
+### 실제 OpenAI 임베딩 연결 확인
+
+실제 API 연결 확인은 일반 Pytest와 CI에 포함하지 않고 개발자가 필요할 때만
+수동으로 실행합니다. 다음 명령은 개인정보가 없는 문장 하나를 전송하고 벡터
+차원만 출력합니다.
+
+```bash
+docker compose exec ai-api python -c '
+from app.core.config import Settings
+from app.infrastructure.openai_embedding import OpenAIEmbeddingClient
+
+settings = Settings()
+client = OpenAIEmbeddingClient(model=settings.embedding_model)
+vector = client.embed_query("예금은 금융기관에 돈을 맡기는 금융상품이다.")
+
+print("모델:", settings.embedding_model)
+print("벡터 차원:", len(vector))
+print("연결 성공:", len(vector) == 1536)
+'
+```
+
+이 명령을 실행할 때만 실제 API 비용이 발생합니다. API 키와 벡터 전체는
+출력하지 않습니다.
+
 ## 테스트 범위
 
 ### 현재 테스트
@@ -364,6 +399,9 @@ docker compose exec ai-api ruff format .
 - 같은 문서 재등록 시 이전 청크 제거와 다른 문서 청크 유지
 - 문서 처리 실패 시 기존 BM25 인덱스 유지
 - 빈 청크 저장소의 BM25 재생성 요청 처리
+- 임베딩 모델 기본값과 환경변수 설정
+- 결정적 임베딩 테스트 대역의 문서·검색어 벡터 생성
+- OpenAI 임베딩 어댑터의 모델 설정과 요청 위임
 
 ### 향후 테스트 범위
 
@@ -526,7 +564,10 @@ Issue에는 다음 내용을 작성합니다.
 
 ## 현재 상태
 
-FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹, 문서·청크 식별자, 청크 저장소 인터페이스와 문서 등록·색인 재생성을 분리한 Kiwi 기반 BM25 검색 파이프라인을 완료했습니다.
+FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions
+CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹, 문서·청크 식별자, 청크
+저장소, Kiwi 기반 BM25 검색 파이프라인, 임베딩 인터페이스와 LangChain 기반
+OpenAI 임베딩 어댑터를 완료했습니다.
 
 현재 개발 진행 순서:
 
@@ -542,8 +583,8 @@ FastAPI 기본 서버 완료
 → Kiwi 기반 BM25 키워드 검색 파이프라인 완료
 → 문서·청크 식별자 및 청크 저장소 인터페이스 완료
 → 문서 등록·교체와 BM25 인덱스 재생성 분리 완료
-→ 임베딩 인터페이스와 테스트 대역
-→ OpenAI 임베딩 어댑터
+→ 임베딩 인터페이스와 테스트 대역 완료
+→ OpenAI 임베딩 어댑터 및 실제 연결 확인 완료
 → FAISS 벡터 색인·검색
 → BM25·FAISS 하이브리드 검색
 → 기본 검색 품질 평가
