@@ -158,6 +158,11 @@ BM25 인덱스를 무효화하며, 문서 처리 중 오류가 발생하면 기�
 `OpenAIEmbeddingClient`가 `text-embedding-3-small` 모델을 호출합니다.
 임베딩 모델명은 `EMBEDDING_MODEL` 환경변수로 관리합니다.
 
+FAISS 벡터 검색은 임베딩 벡터를 정규화한 뒤 내적 검색을 사용해 코사인
+유사도를 계산합니다. FAISS 인덱스에는 청크 본문을 넣지 않고 벡터와 위치를
+저장하며, 별도 JSON 파일의 `chunk_key` 목록으로 청크 저장소와 연결합니다.
+인덱스와 키 매핑은 로컬 파일로 저장하고 다시 로드할 수 있습니다.
+
 ## 프로젝트 구조
 
 ```text
@@ -185,7 +190,8 @@ firstfolio-ai/
 │   │   ├── repositories/
 │   │   │   └── in_memory_chunk.py # 메모리 청크 저장소
 │   │   ├── search/
-│   │   │   └── bm25.py         # BM25 키워드 검색
+│   │   │   ├── bm25.py         # BM25 키워드 검색
+│   │   │   └── faiss.py        # FAISS 벡터 색인·검색·파일 저장
 │   │   └── tokenizers/
 │   │       └── kiwi.py         # Kiwi 한국어 토크나이저
 │   └── main.py                 # FastAPI 실행 진입점
@@ -207,7 +213,8 @@ firstfolio-ai/
 │       ├── repositories/
 │       │   └── test_in_memory_chunk.py
 │       ├── search/
-│       │   └── test_bm25.py
+│       │   ├── test_bm25.py
+│       │   └── test_faiss.py
 │       └── tokenizers/
 │           └── test_kiwi.py
 ├── data/
@@ -240,6 +247,8 @@ pydantic-settings
 kiwipiepy
 rank-bm25
 langchain-openai
+numpy
+faiss-cpu
 ```
 
 ### requirements-dev.txt
@@ -402,12 +411,14 @@ print("연결 성공:", len(vector) == 1536)
 - 임베딩 모델 기본값과 환경변수 설정
 - 결정적 임베딩 테스트 대역의 문서·검색어 벡터 생성
 - OpenAI 임베딩 어댑터의 모델 설정과 요청 위임
+- FAISS 코사인 유사도 기반 벡터 색인과 상위 결과 검색
+- FAISS 벡터 차원·개수·빈 입력 오류 처리
+- FAISS 인덱스와 `chunk_key` 매핑 저장·로드 및 불일치 처리
 
 ### 향후 테스트 범위
 
 - 문서 전처리
 - 문서 유형별 청킹
-- FAISS 벡터 검색
 - 하이브리드 검색
 - 프롬프트 입력 구성
 - LLM 출력 JSON 검증
@@ -567,7 +578,7 @@ Issue에는 다음 내용을 작성합니다.
 FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions
 CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹, 문서·청크 식별자, 청크
 저장소, Kiwi 기반 BM25 검색 파이프라인, 임베딩 인터페이스와 LangChain 기반
-OpenAI 임베딩 어댑터를 완료했습니다.
+OpenAI 임베딩 어댑터, FAISS 벡터 색인·검색과 로컬 파일 저장을 완료했습니다.
 
 현재 개발 진행 순서:
 
@@ -585,7 +596,7 @@ FastAPI 기본 서버 완료
 → 문서 등록·교체와 BM25 인덱스 재생성 분리 완료
 → 임베딩 인터페이스와 테스트 대역 완료
 → OpenAI 임베딩 어댑터 및 실제 연결 확인 완료
-→ FAISS 벡터 색인·검색
+→ FAISS 벡터 색인·검색 및 파일 저장·로드 완료
 → BM25·FAISS 하이브리드 검색
 → 기본 검색 품질 평가
 → AI MySQL 문서·청크 저장
