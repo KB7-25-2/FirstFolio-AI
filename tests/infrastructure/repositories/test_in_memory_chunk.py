@@ -1,3 +1,6 @@
+import pytest
+
+from app.application.ports.chunk_repository import ChunkNotFoundError
 from app.domain.chunk import DocumentChunk
 from app.infrastructure.repositories.in_memory_chunk import (
     InMemoryChunkRepository,
@@ -50,9 +53,32 @@ def test_find_chunks_in_requested_key_order() -> None:
     chunks = repository.find_by_chunk_keys(
         [
             "document-001:1",
-            "missing-key",
             "document-001:0",
         ]
     )
 
     assert chunks == [second_chunk, first_chunk]
+
+
+def test_raise_error_when_chunk_key_is_missing() -> None:
+    repository = InMemoryChunkRepository()
+    repository.save_all([create_chunk(0, "첫 번째 청크")])
+
+    with pytest.raises(
+        ChunkNotFoundError,
+        match="missing-key",
+    ):
+        repository.find_by_chunk_keys(
+            [
+                "document-001:0",
+                "missing-key",
+            ]
+        )
+
+
+def test_return_empty_list_when_chunk_keys_are_empty() -> None:
+    repository = InMemoryChunkRepository()
+
+    chunks = repository.find_by_chunk_keys([])
+
+    assert chunks == []

@@ -4,6 +4,10 @@ from typing import Protocol
 from app.domain.chunk import DocumentChunk
 
 
+class ChunkNotFoundError(LookupError):
+    pass
+
+
 class ChunkRepository(Protocol):
     # 청킹 결과 저장
     def save_all(
