@@ -26,7 +26,7 @@ class BM25SearchPipeline:
         self._tokenizer = KiwiTokenizer()
         self._search_engine: BM25Search | None = None
 
-    def build_index(
+    def register_document(
         self,
         path: str | Path,
         document_id: str,
@@ -37,20 +37,35 @@ class BM25SearchPipeline:
         )
         chunks = self._chunker.chunk(document)
 
-        self._chunk_repository.save_all(chunks)
+        self._chunk_repository.replace_document_chunks(
+            document_id=document_id,
+            chunks=chunks,
+        )
+
+        self._search_engine = None
+
+        return len(chunks)
+
+    def rebuild_index(self) -> int:
         stored_chunks = self._chunk_repository.find_all()
+
+        if not stored_chunks:
+            raise SearchIndexNotBuiltError(
+                "BM25 검색 인덱스를 재생성할 문서 청크가 없습니다."
+            )
 
         self._search_engine = BM25Search(
             chunks=stored_chunks,
             tokenizer=self._tokenizer,
         )
 
-        return len(chunks)
+        return len(stored_chunks)
 
     def search(self, query: str) -> list[SearchResult]:
         if self._search_engine is None:
             raise SearchIndexNotBuiltError(
-                "BM25 검색 전에 문서 색인을 생성해야 합니다."
+                "BM25 검색 인덱스가 없거나 문서 변경 후 재생성이 필요합니다.\n"
+                "rebuild_index()를 먼저 실행해 주세요."
             )
 
         return self._search_engine.search(
