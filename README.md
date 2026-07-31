@@ -163,6 +163,11 @@ FAISS 벡터 검색은 임베딩 벡터를 정규화한 뒤 내적 검색을 사
 저장하며, 별도 JSON 파일의 `chunk_key` 목록으로 청크 저장소와 연결합니다.
 인덱스와 키 매핑은 로컬 파일로 저장하고 다시 로드할 수 있습니다.
 
+하이브리드 검색은 BM25와 FAISS의 원점수 범위가 서로 다르므로 원점수를
+직접 더하지 않습니다. 각 검색 결과의 순위를 기준으로 `가중치 / 순위` 점수를
+계산하고, 같은 `chunk_key`가 양쪽에 있으면 점수를 합산합니다. 기본 가중치는
+BM25 `0.7`, FAISS `0.3`이며 환경변수로 조정합니다.
+
 ## 프로젝트 구조
 
 ```text
@@ -176,7 +181,8 @@ firstfolio-ai/
 │   │   │   ├── chunk_repository.py # 청크 저장소 인터페이스
 │   │   │   └── embedding.py    # 임베딩 인터페이스
 │   │   └── search/
-│   │       └── bm25_pipeline.py # BM25 검색 통합 파이프라인
+│   │       ├── bm25_pipeline.py # BM25 검색 통합 파이프라인
+│   │       └── hybrid.py        # BM25·FAISS 하이브리드 검색
 │   ├── core/
 │   │   └── config.py           # 환경설정
 │   ├── domain/
@@ -203,7 +209,8 @@ firstfolio-ai/
 │   │   ├── chunkers/
 │   │   │   └── test_paragraph.py
 │   │   └── search/
-│   │       └── test_bm25_pipeline.py
+│   │       ├── test_bm25_pipeline.py
+│   │       └── test_hybrid.py
 │   ├── core/
 │   │   └── test_config.py
 │   └── infrastructure/
@@ -280,6 +287,8 @@ cp .env.example .env
 APP_ENV=local
 APP_PORT=8000
 SEARCH_TOP_K=5
+BM25_WEIGHT=0.7
+FAISS_WEIGHT=0.3
 EMBEDDING_MODEL=text-embedding-3-small
 
 OPENAI_API_KEY=
@@ -414,12 +423,16 @@ print("연결 성공:", len(vector) == 1536)
 - FAISS 코사인 유사도 기반 벡터 색인과 상위 결과 검색
 - FAISS 벡터 차원·개수·빈 입력 오류 처리
 - FAISS 인덱스와 `chunk_key` 매핑 저장·로드 및 불일치 처리
+- BM25·FAISS 결과의 가중 순위 결합과 중복 청크 점수 합산
+- 검색 가중치가 0인 검색기 호출 생략
+- 하이브리드 검색 결과 개수 제한과 누락된 `chunk_key` 오류 처리
+- 두 검색 결과가 모두 비어 있을 때 빈 결과 반환
 
 ### 향후 테스트 범위
 
 - 문서 전처리
 - 문서 유형별 청킹
-- 하이브리드 검색
+- 기본 검색 품질 평가
 - 프롬프트 입력 구성
 - LLM 출력 JSON 검증
 - 검색 청크와 답변 근거 일치 여부
@@ -578,7 +591,8 @@ Issue에는 다음 내용을 작성합니다.
 FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions
 CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹, 문서·청크 식별자, 청크
 저장소, Kiwi 기반 BM25 검색 파이프라인, 임베딩 인터페이스와 LangChain 기반
-OpenAI 임베딩 어댑터, FAISS 벡터 색인·검색과 로컬 파일 저장을 완료했습니다.
+OpenAI 임베딩 어댑터, FAISS 벡터 색인·검색과 로컬 파일 저장, BM25·FAISS
+하이브리드 검색을 완료했습니다.
 
 현재 개발 진행 순서:
 
@@ -597,7 +611,7 @@ FastAPI 기본 서버 완료
 → 임베딩 인터페이스와 테스트 대역 완료
 → OpenAI 임베딩 어댑터 및 실제 연결 확인 완료
 → FAISS 벡터 색인·검색 및 파일 저장·로드 완료
-→ BM25·FAISS 하이브리드 검색
+→ BM25·FAISS 하이브리드 검색 완료
 → 기본 검색 품질 평가
 → AI MySQL 문서·청크 저장
 → S3 원문·FAISS 인덱스 저장
