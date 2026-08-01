@@ -26,7 +26,7 @@ services:
   mysql:
     image: mysql:8.0
     environment:
-      MYSQL_DATABASE: firstfolio_ai
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-firstfolio_ai}"
       MYSQL_USER: "${MYSQL_USER:-firstfolio_ai}"
       MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set in .env}"
       MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set in .env}"

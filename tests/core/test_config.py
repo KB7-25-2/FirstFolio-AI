@@ -98,3 +98,30 @@ def test_reject_hybrid_search_weight_outside_allowed_range(
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_load_mysql_settings_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MYSQL_HOST", "mysql-test")
+    monkeypatch.setenv("MYSQL_PORT", "3307")
+    monkeypatch.setenv("MYSQL_DATABASE", "firstfolio_ai_test")
+    monkeypatch.setenv("MYSQL_USER", "test-user")
+    monkeypatch.setenv("MYSQL_PASSWORD", "test-password")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.mysql_host == "mysql-test"
+    assert settings.mysql_port == 3307
+    assert settings.mysql_database == "firstfolio_ai_test"
+    assert settings.mysql_user == "test-user"
+    assert settings.mysql_password.get_secret_value() == "test-password"
+
+
+def test_hide_mysql_password_from_settings_representation() -> None:
+    settings = Settings(
+        mysql_password="secret-password",
+        _env_file=None,
+    )
+
+    assert "secret-password" not in repr(settings)
