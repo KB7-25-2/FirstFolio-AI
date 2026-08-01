@@ -100,6 +100,33 @@ Spring 서버 요청
 → Spring 서버에 결과 반환
 ```
 
+### 운영 흐름과 개발 순서
+
+위 색인·검색 흐름은 최종 운영 구조입니다. 현재 개발 단계에서는 메모리 청크
+저장소를 사용해 검색 기능을 먼저 완성하고, 이후 MySQL과 S3 영속 저장소를
+연결합니다.
+
+확정된 개발 순서는 다음과 같습니다.
+
+```text
+임베딩 인터페이스와 테스트 대역
+→ OpenAI 임베딩 어댑터
+→ FAISS 벡터 색인·검색
+→ BM25·FAISS 하이브리드 검색
+→ 기본 검색 품질 평가
+→ AI MySQL 문서·청크 저장
+→ S3 원문·FAISS 인덱스 저장
+→ 교과서·법령·뉴스 등 문서 유형별 청킹 확장
+→ 근거 기반 콘텐츠 생성
+→ 생성 품질 검수
+→ Spring 내부 API 연동
+```
+
+FAISS는 MySQL의 기술적 선행 작업이 아닙니다. 현재
+`InMemoryChunkRepository`가 제공하는 청크와 `chunk_key`로 먼저 구현하고,
+MySQL은 운영 데이터 영속화와 재색인 단계에서 연결합니다. 문서 유형별 청킹은
+기본 검색 파이프라인과 저장 기반을 완성한 후 독립 전략으로 확장합니다.
+
 ## 데이터 저장 위치
 
 | 저장 위치 | 저장 데이터 |
@@ -114,6 +141,33 @@ AI 서버가 생성한 콘텐츠는 구조화된 JSON으로 Spring 서버에 전
 
 MySQL 청크, BM25 결과와 FAISS 결과는 공통 `chunk_key`로 연결합니다.
 
+현재 구현에서는 원문을 `document_id`로 구분하고, 청크 식별자는
+`{document_id}:{sequence}` 형식으로 생성합니다. 개발 및 테스트 단계에서는
+`ChunkRepository` 인터페이스와 메모리 구현체를 사용하며, 운영용 MySQL 저장소는
+아직 연결하지 않았습니다. 메모리 저장소의 데이터는 서버가 종료되면 사라집니다.
+
+문서 등록과 BM25 인덱스 재생성은 분리되어 있습니다. 여러 문서를
+`register_document()`로 등록하거나 교체한 뒤 `rebuild_index()`를 한 번
+실행합니다. 같은 `document_id`를 다시 등록하면 해당 문서의 기존 청크만
+교체하고 다른 문서의 청크는 유지합니다. 문서 등록이 정상적으로 끝나면 기존
+BM25 인덱스를 무효화하며, 문서 처리 중 오류가 발생하면 기존 인덱스를
+유지합니다.
+
+임베딩은 애플리케이션의 `EmbeddingClient` 인터페이스를 통해 사용합니다.
+자동 테스트에서는 LangChain의 결정적 테스트 대역을 사용하고, 실제 실행에서는
+`OpenAIEmbeddingClient`가 `text-embedding-3-small` 모델을 호출합니다.
+임베딩 모델명은 `EMBEDDING_MODEL` 환경변수로 관리합니다.
+
+FAISS 벡터 검색은 임베딩 벡터를 정규화한 뒤 내적 검색을 사용해 코사인
+유사도를 계산합니다. FAISS 인덱스에는 청크 본문을 넣지 않고 벡터와 위치를
+저장하며, 별도 JSON 파일의 `chunk_key` 목록으로 청크 저장소와 연결합니다.
+인덱스와 키 매핑은 로컬 파일로 저장하고 다시 로드할 수 있습니다.
+
+하이브리드 검색은 BM25와 FAISS의 원점수 범위가 서로 다르므로 원점수를
+직접 더하지 않습니다. 각 검색 결과의 순위를 기준으로 `가중치 / 순위` 점수를
+계산하고, 같은 `chunk_key`가 양쪽에 있으면 점수를 합산합니다. 기본 가중치는
+BM25 `0.7`, FAISS `0.3`이며 환경변수로 조정합니다.
+
 ## 프로젝트 구조
 
 ```text
@@ -123,8 +177,13 @@ firstfolio-ai/
 │   ├── application/
 │   │   ├── chunkers/
 │   │   │   └── paragraph.py    # 일반 텍스트 문단 청커
+│   │   ├── ports/
+│   │   │   ├── chunk_repository.py # 청크 저장소 인터페이스
+│   │   │   └── embedding.py    # 임베딩 인터페이스
 │   │   └── search/
-│   │       └── bm25_pipeline.py # BM25 검색 통합 파이프라인
+│   │       ├── bm25_pipeline.py # BM25 검색 통합 파이프라인
+│   │       ├── evaluation.py    # 검색 품질 평가 지표·데이터 로더
+│   │       └── hybrid.py        # BM25·FAISS 하이브리드 검색
 │   ├── core/
 │   │   └── config.py           # 환경설정
 │   ├── domain/
@@ -134,8 +193,12 @@ firstfolio-ai/
 │   ├── infrastructure/
 │   │   ├── document_loaders/
 │   │   │   └── text.py         # 일반 텍스트 문서 로더
+│   │   ├── openai_embedding.py  # LangChain OpenAI 임베딩 어댑터
+│   │   ├── repositories/
+│   │   │   └── in_memory_chunk.py # 메모리 청크 저장소
 │   │   ├── search/
-│   │   │   └── bm25.py         # BM25 키워드 검색
+│   │   │   ├── bm25.py         # BM25 키워드 검색
+│   │   │   └── faiss.py        # FAISS 벡터 색인·검색·파일 저장
 │   │   └── tokenizers/
 │   │       └── kiwi.py         # Kiwi 한국어 토크나이저
 │   └── main.py                 # FastAPI 실행 진입점
@@ -143,17 +206,24 @@ firstfolio-ai/
 │   ├── api/
 │   │   └── test_health.py
 │   ├── application/
+│   │   ├── test_embedding.py
 │   │   ├── chunkers/
 │   │   │   └── test_paragraph.py
 │   │   └── search/
-│   │       └── test_bm25_pipeline.py
+│   │       ├── test_bm25_pipeline.py
+│   │       ├── test_evaluation.py
+│   │       └── test_hybrid.py
 │   ├── core/
 │   │   └── test_config.py
 │   └── infrastructure/
+│       ├── test_openai_embedding.py
 │       ├── document_loaders/
 │       │   └── test_text.py
+│       ├── repositories/
+│       │   └── test_in_memory_chunk.py
 │       ├── search/
-│       │   └── test_bm25.py
+│       │   ├── test_bm25.py
+│       │   └── test_faiss.py
 │       └── tokenizers/
 │           └── test_kiwi.py
 ├── data/
@@ -185,6 +255,9 @@ uvicorn
 pydantic-settings
 kiwipiepy
 rank-bm25
+langchain-openai
+numpy
+faiss-cpu
 ```
 
 ### requirements-dev.txt
@@ -216,6 +289,9 @@ cp .env.example .env
 APP_ENV=local
 APP_PORT=8000
 SEARCH_TOP_K=5
+BM25_WEIGHT=0.7
+FAISS_WEIGHT=0.3
+EMBEDDING_MODEL=text-embedding-3-small
 
 OPENAI_API_KEY=
 
@@ -294,6 +370,30 @@ docker compose exec ai-api ruff format --check .
 docker compose exec ai-api ruff format .
 ```
 
+### 실제 OpenAI 임베딩 연결 확인
+
+실제 API 연결 확인은 일반 Pytest와 CI에 포함하지 않고 개발자가 필요할 때만
+수동으로 실행합니다. 다음 명령은 개인정보가 없는 문장 하나를 전송하고 벡터
+차원만 출력합니다.
+
+```bash
+docker compose exec ai-api python -c '
+from app.core.config import Settings
+from app.infrastructure.openai_embedding import OpenAIEmbeddingClient
+
+settings = Settings()
+client = OpenAIEmbeddingClient(model=settings.embedding_model)
+vector = client.embed_query("예금은 금융기관에 돈을 맡기는 금융상품이다.")
+
+print("모델:", settings.embedding_model)
+print("벡터 차원:", len(vector))
+print("연결 성공:", len(vector) == 1536)
+'
+```
+
+이 명령을 실행할 때만 실제 API 비용이 발생합니다. API 키와 벡터 전체는
+출력하지 않습니다.
+
 ## 테스트 범위
 
 ### 현재 테스트
@@ -305,22 +405,38 @@ docker compose exec ai-api ruff format .
 - 지원하지 않는 문서 확장자 처리
 - 내용이 없는 문서 처리
 - 일반 텍스트의 문단 단위 분리
-- 문단 순서와 원문 메타데이터 보존
+- 문단 순서, 문서 ID와 청크 식별자 보존
 - 빈 문단 제외와 문단 내부 줄바꿈 보존
+- 메모리 청크 저장·교체·식별자 순서 조회와 누락 식별자 오류 처리
 - 검색 결과 개수의 기본값·환경 변수·유효성 검사
 - Kiwi 기반 한국어 금융 문장 토큰화
 - 영문 검색어 소문자 변환과 빈 검색어 처리
 - BM25 관련 청크 순위와 상위 결과 개수 제한
 - 무관한 검색어와 잘못된 BM25 입력 처리
-- 텍스트 파일 로드부터 BM25 검색까지의 통합 흐름
+- 텍스트 파일 로드, 청크 저장부터 BM25 검색까지의 통합 흐름
 - 색인 생성 전 검색 요청 처리와 환경 설정 적용
+- 여러 문서 등록 후 BM25 인덱스 일괄 재생성
+- 같은 문서 재등록 시 이전 청크 제거와 다른 문서 청크 유지
+- 문서 처리 실패 시 기존 BM25 인덱스 유지
+- 빈 청크 저장소의 BM25 재생성 요청 처리
+- 임베딩 모델 기본값과 환경변수 설정
+- 결정적 임베딩 테스트 대역의 문서·검색어 벡터 생성
+- OpenAI 임베딩 어댑터의 모델 설정과 요청 위임
+- FAISS 코사인 유사도 기반 벡터 색인과 상위 결과 검색
+- FAISS 벡터 차원·개수·빈 입력 오류 처리
+- FAISS 인덱스와 `chunk_key` 매핑 저장·로드 및 불일치 처리
+- BM25·FAISS 결과의 가중 순위 결합과 중복 청크 점수 합산
+- 검색 가중치가 0인 검색기 호출 생략
+- 하이브리드 검색 결과 개수 제한과 누락된 `chunk_key` 오류 처리
+- 두 검색 결과가 모두 비어 있을 때 빈 결과 반환
+- Recall@K·MRR 계산과 입력값 검증
+- JSON 평가 질문·정답 청크 키 로드
+- 동일한 평가 질문을 여러 검색 방식에 적용하고 지표 비교
 
 ### 향후 테스트 범위
 
 - 문서 전처리
 - 문서 유형별 청킹
-- FAISS 벡터 검색
-- 하이브리드 검색
 - 프롬프트 입력 구성
 - LLM 출력 JSON 검증
 - 검색 청크와 답변 근거 일치 여부
@@ -474,11 +590,32 @@ Issue에는 다음 내용을 작성합니다.
 - 개별 생성 실패가 전체 배치 작업을 중단시키지 않도록 처리
 - 실패한 생성 항목만 제한적으로 재시도
 
+### 검색 품질 1차 기준선
+
+로컬 금융 교과서를 기본 문단 단위로 406개 청크로 나누고, 10개
+평가 질문에 정답 `chunk_key`를 연결했습니다. 각 질문에서 상위 5개
+결과의 Recall@5와 첫 정답 순위를 반영한 MRR을 계산했습니다.
+
+| 검색 방식 | Recall@5 | MRR |
+|---|---:|---:|
+| BM25 | 1.0000 | 0.8533 |
+| FAISS | 0.9500 | 0.8667 |
+| 하이브리드 | 1.0000 | 0.8833 |
+
+하이브리드 검색은 기본 가중치 BM25 `0.7`, FAISS `0.3`에서 목표
+Recall@5 80% 이상을 만족하고 가장 높은 MRR을 기록했습니다. 현재
+가중치는 유지합니다. 이 결과는 한 교과서와 기본 문단 청킹을 사용한
+개발 기준선이며, 문서 유형별 청킹을 적용한 후 다시 평가합니다.
+
 ## 현재 상태
 
-FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹과 Kiwi 기반 BM25 키워드 검색 통합 파이프라인을 완료했습니다.
+FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions
+CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹, 문서·청크 식별자, 청크
+저장소, Kiwi 기반 BM25 검색 파이프라인, 임베딩 인터페이스와 LangChain 기반
+OpenAI 임베딩 어댑터, FAISS 벡터 색인·검색과 로컬 파일 저장, BM25·FAISS
+하이브리드 검색과 기본 검색 품질 평가를 완료했습니다.
 
-초기 구축 순서:
+현재 개발 진행 순서:
 
 ```text
 FastAPI 기본 서버 완료
@@ -490,9 +627,33 @@ FastAPI 기본 서버 완료
 → 일반 텍스트 문서 로더 완료
 → 기본 문단 기반 청킹 완료
 → Kiwi 기반 BM25 키워드 검색 파이프라인 완료
-→ FAISS 검색
-→ 하이브리드 검색
-→ 콘텐츠 생성
-→ 품질 평가
+→ 문서·청크 식별자 및 청크 저장소 인터페이스 완료
+→ 문서 등록·교체와 BM25 인덱스 재생성 분리 완료
+→ 임베딩 인터페이스와 테스트 대역 완료
+→ OpenAI 임베딩 어댑터 및 실제 연결 확인 완료
+→ FAISS 벡터 색인·검색 및 파일 저장·로드 완료
+→ BM25·FAISS 하이브리드 검색 완료
+→ 기본 검색 품질 평가 완료
+→ AI MySQL 문서·청크 저장
+→ S3 원문·FAISS 인덱스 저장
+→ 문서 유형별 청킹 전략 확장
+→ 근거 기반 콘텐츠 생성
+→ 생성 품질 검수
 → Spring 서버 연동
 ```
+
+### main 브랜치 반영 시점
+
+기능 브랜치는 항상 `dev`를 대상으로 병합하고, `main`에는 기능 하나가 끝날
+때마다 반영하지 않습니다. 다음과 같이 실행·검증 가능한 마일스톤이 완성됐을
+때 `dev`에서 `main`으로 PR을 생성합니다.
+
+1. **검색 기반 1차 완성**: 기본 검색 품질 평가를 완료하고 BM25·FAISS·
+   하이브리드 검색의 기준 결과와 설정값을 기록한 시점
+2. **운영 저장 기반 완성**: AI MySQL, S3, 문서 유형별 청킹과 재색인·복구
+   흐름을 검증한 시점
+3. **RAG 콘텐츠 생성 MVP 완성**: 근거 기반 콘텐츠 생성, 품질 검수와 Spring
+   내부 API 계약을 검증한 시점
+
+기본 검색 품질 평가를 `dev`에 병합하고 전체 CI를 통과하면 검색 기반
+1차 버전의 `dev → main` PR을 생성합니다.
