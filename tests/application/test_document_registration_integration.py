@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.application.document_registration import TextDocumentRegistrationPipeline
+from app.application.search.bm25_pipeline import BM25SearchPipeline
 from app.core.config import Settings
 from app.infrastructure.database import create_mysql_connection
 from app.infrastructure.repositories.mysql_chunk import MySQLChunkRepository
@@ -171,6 +172,82 @@ def test_register_s3_text_document_in_local_mysql() -> None:
 
     if document_id is None:
         raise RuntimeError("통합 테스트 document_id가 생성되지 않았습니다.")
+
+    assert _count_document_rows(
+        settings,
+        document_id,
+    ) == (0, 0)
+
+
+def test_rebuild_bm25_index_from_mysql_chunks() -> None:
+    settings = Settings(
+        search_top_k=3,
+    )
+    document_repository = MySQLDocumentRepository(settings)
+    chunk_repository = MySQLChunkRepository(settings)
+    registration_pipeline = TextDocumentRegistrationPipeline(
+        settings=settings,
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+    )
+
+    unique_suffix = uuid4().hex
+    unique_search_token = f"bm25mysql{unique_suffix}"
+    object_key = f"integration-tests/{unique_suffix}/bm25_financial_textbook.txt"
+    version_id = f"integration-version-{unique_suffix}"
+    stored_content = (
+        f"{unique_search_token} 예금은 금리를 제공한다.\n\n"
+        "채권은 만기와 이자를 가진다.\n\n"
+        "주식은 기업의 지분을 나타낸다."
+    ).encode()
+
+    document_id: int | None = None
+
+    try:
+        with (
+            patch(
+                "app.application.document_registration.upload_text_object",
+                return_value=version_id,
+            ),
+            patch(
+                "app.application.document_registration.download_text_object",
+                return_value=stored_content,
+            ),
+        ):
+            document_id, chunk_count = registration_pipeline.register(
+                content=stored_content,
+                object_key=object_key,
+                document_type="textbook",
+                category="integration-test",
+                title="BM25 MySQL 통합 테스트",
+                original_filename="bm25_financial_textbook.txt",
+                publisher="FirstFolio",
+            )
+
+        search_pipeline = BM25SearchPipeline(
+            settings=settings,
+            chunk_repository=chunk_repository,
+        )
+
+        indexed_chunk_count = search_pipeline.rebuild_index()
+        results = search_pipeline.search(unique_search_token)
+
+        assert chunk_count == 3
+        assert indexed_chunk_count >= 3
+        assert len(results) == 1
+        assert results[0].chunk.document_id == str(document_id)
+        assert results[0].chunk.chunk_key == f"{document_id}:0"
+        assert unique_search_token in results[0].chunk.content
+        assert results[0].score > 0
+    finally:
+        if document_id is not None:
+            _delete_test_document(
+                settings,
+                document_id,
+            )
+
+    if document_id is None:
+        raise RuntimeError("BM25 통합 테스트 document_id가 생성되지 않았습니다.")
 
     assert _count_document_rows(
         settings,
