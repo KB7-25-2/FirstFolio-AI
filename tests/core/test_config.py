@@ -125,3 +125,46 @@ def test_hide_mysql_password_from_settings_representation() -> None:
     )
 
     assert "secret-password" not in repr(settings)
+
+
+def test_use_default_aws_region(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AWS_REGION", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.aws_region == "ap-northeast-2"
+
+
+def test_load_aws_storage_settings_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AWS_REGION", "us-west-2")
+    monkeypatch.setenv("S3_BUCKET_NAME", "test-rag-bucket")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.aws_region == "us-west-2"
+    assert settings.s3_bucket_name == "test-rag-bucket"
+
+
+def test_exclude_aws_credentials_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "AWS_ACCESS_KEY_ID",
+        "test-access-key",
+    )
+    monkeypatch.setenv(
+        "AWS_SECRET_ACCESS_KEY",
+        "test-secret-key",
+    )
+
+    settings = Settings(_env_file=None)
+    settings_representation = repr(settings)
+
+    assert not hasattr(settings, "aws_access_key_id")
+    assert not hasattr(settings, "aws_secret_access_key")
+    assert "test-access-key" not in settings_representation
+    assert "test-secret-key" not in settings_representation

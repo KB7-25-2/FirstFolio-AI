@@ -7,3 +7,4 @@ langchain-openai
 numpy
 faiss-cpu
 mysql-connector-python
+boto3

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     mysql_database: str = "firstfolio_ai"
     mysql_user: str = "firstfolio_ai"
     mysql_password: SecretStr = SecretStr("")
+    aws_region: str = "ap-northeast-2"
+    s3_bucket_name: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
