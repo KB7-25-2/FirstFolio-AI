@@ -6,6 +6,8 @@ from app.core.config import Settings
 from app.infrastructure.s3 import (
     check_s3_connection,
     create_s3_client,
+    download_text_object,
+    upload_text_object,
 )
 
 
@@ -134,4 +136,253 @@ def test_close_s3_client_when_connection_check_fails(
     ):
         check_s3_connection(settings)
 
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_upload_text_object_returns_version_id(
+    create_client_mock: Mock,
+) -> None:
+    client = Mock()
+    client.put_object.return_value = {
+        "VersionId": "version-001",
+    }
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+    content = "금융 교과서 테스트".encode()
+
+    version_id = upload_text_object(
+        settings,
+        "documents/financial_textbook.txt",
+        content,
+    )
+
+    assert version_id == "version-001"
+    client.put_object.assert_called_once_with(
+        Bucket="test-rag-bucket",
+        Key="documents/financial_textbook.txt",
+        Body=content,
+        ContentType="text/plain; charset=utf-8",
+    )
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_reject_empty_s3_object_key(
+    create_client_mock: Mock,
+) -> None:
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="object_key",
+    ):
+        upload_text_object(
+            settings,
+            "   ",
+            b"test content",
+        )
+
+    create_client_mock.assert_not_called()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_reject_upload_response_without_version_id(
+    create_client_mock: Mock,
+) -> None:
+    client = Mock()
+    client.put_object.return_value = {}
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="VersionId",
+    ):
+        upload_text_object(
+            settings,
+            "documents/test.txt",
+            b"test content",
+        )
+
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_close_s3_client_when_upload_fails(
+    create_client_mock: Mock,
+) -> None:
+    client = Mock()
+    client.put_object.side_effect = RuntimeError(
+        "S3 upload failed",
+    )
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="S3 upload failed",
+    ):
+        upload_text_object(
+            settings,
+            "documents/test.txt",
+            b"test content",
+        )
+
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_download_text_object_by_version_id(
+    create_client_mock: Mock,
+) -> None:
+    response_body = Mock()
+    response_body.read.return_value = b"financial textbook"
+
+    client = Mock()
+    client.get_object.return_value = {
+        "Body": response_body,
+    }
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    content = download_text_object(
+        settings,
+        "documents/financial_textbook.txt",
+        "version-001",
+    )
+
+    assert content == b"financial textbook"
+    client.get_object.assert_called_once_with(
+        Bucket="test-rag-bucket",
+        Key="documents/financial_textbook.txt",
+        VersionId="version-001",
+    )
+    response_body.read.assert_called_once_with()
+    response_body.close.assert_called_once_with()
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_reject_empty_download_object_key(
+    create_client_mock: Mock,
+) -> None:
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="object_key",
+    ):
+        download_text_object(
+            settings,
+            "   ",
+            "version-001",
+        )
+
+    create_client_mock.assert_not_called()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_reject_empty_download_version_id(
+    create_client_mock: Mock,
+) -> None:
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="version_id",
+    ):
+        download_text_object(
+            settings,
+            "documents/test.txt",
+            "   ",
+        )
+
+    create_client_mock.assert_not_called()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_close_s3_client_when_download_fails(
+    create_client_mock: Mock,
+) -> None:
+    client = Mock()
+    client.get_object.side_effect = RuntimeError(
+        "S3 download failed",
+    )
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="S3 download failed",
+    ):
+        download_text_object(
+            settings,
+            "documents/test.txt",
+            "version-001",
+        )
+
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_close_s3_resources_when_body_read_fails(
+    create_client_mock: Mock,
+) -> None:
+    response_body = Mock()
+    response_body.read.side_effect = RuntimeError(
+        "S3 body read failed",
+    )
+
+    client = Mock()
+    client.get_object.return_value = {
+        "Body": response_body,
+    }
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="S3 body read failed",
+    ):
+        download_text_object(
+            settings,
+            "documents/test.txt",
+            "version-001",
+        )
+
+    response_body.close.assert_called_once_with()
     client.close.assert_called_once_with()
