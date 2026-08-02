@@ -102,9 +102,9 @@ Spring 서버 요청
 
 ### 운영 흐름과 개발 순서
 
-위 색인·검색 흐름은 최종 운영 구조입니다. 현재 개발 단계에서는 메모리 청크
-저장소를 사용해 검색 기능을 먼저 완성하고, 이후 MySQL과 S3 영속 저장소를
-연결합니다.
+위 색인·검색 흐름은 최종 운영 구조입니다. 현재는 메모리
+청크 저장소를 단위 테스트와 개발 대역으로 유지하면서, MySQL 문서·청크
+저장소와 S3 원문 저장소를 연결한 상태입니다.
 
 확정된 개발 순서는 다음과 같습니다.
 
@@ -114,24 +114,27 @@ Spring 서버 요청
 → FAISS 벡터 색인·검색
 → BM25·FAISS 하이브리드 검색
 → 기본 검색 품질 평가
-→ AI MySQL 문서·청크 저장
-→ S3 원문·FAISS 인덱스 저장
+→ AI MySQL 문서·청크 저장 완료
+→ S3 원문 저장 완료
+→ MySQL 전체 청크 기반 BM25·FAISS 재색인 완료
+→ FAISS 인덱스 S3 백업
 → 교과서·법령·뉴스 등 문서 유형별 청킹 확장
 → 근거 기반 콘텐츠 생성
 → 생성 품질 검수
 → Spring 내부 API 연동
 ```
 
-FAISS는 MySQL의 기술적 선행 작업이 아닙니다. 현재
-`InMemoryChunkRepository`가 제공하는 청크와 `chunk_key`로 먼저 구현하고,
-MySQL은 운영 데이터 영속화와 재색인 단계에서 연결합니다. 문서 유형별 청킹은
-기본 검색 파이프라인과 저장 기반을 완성한 후 독립 전략으로 확장합니다.
+`InMemoryChunkRepository`는 단위 테스트와 개발 대역으로 유지하고,
+`MySQLChunkRepository`는 운영 데이터 영속화와 BM25·FAISS 재색인에
+사용합니다. 두 구현은 같은 `ChunkRepository` 계약을 사용합니다.
+문서 유형별 청킹은 기본 검색 파이프라인과 저장 기반을 완성한 후
+독립 전략으로 확장합니다.
 
 ## 데이터 저장 위치
 
 | 저장 위치 | 저장 데이터 |
 |---|---|
-| MySQL | 문서 정보, 청크 본문, 메타데이터, 색인 작업 및 요청 로그 |
+| MySQL | 문서 정보, 청크 본문과 메타데이터 |
 | Amazon S3 | 원본 문서와 FAISS 인덱스 백업 |
 | FAISS 파일 | 청크 임베딩 벡터와 청크 식별자 |
 | AI 서버 메모리 | 실행 중인 BM25 검색 객체 |
@@ -141,17 +144,23 @@ AI 서버가 생성한 콘텐츠는 구조화된 JSON으로 Spring 서버에 전
 
 MySQL 청크, BM25 결과와 FAISS 결과는 공통 `chunk_key`로 연결합니다.
 
-현재 구현에서는 원문을 `document_id`로 구분하고, 청크 식별자는
-`{document_id}:{sequence}` 형식으로 생성합니다. 개발 및 테스트 단계에서는
-`ChunkRepository` 인터페이스와 메모리 구현체를 사용하며, 운영용 MySQL 저장소는
-아직 연결하지 않았습니다. 메모리 저장소의 데이터는 서버가 종료되면 사라집니다.
+현재 구현에서는 MySQL의 숫자 `document_id`로 원문과 청크를 연결하고,
+청크 식별자는 `{document_id}:{chunk_order}` 형식으로 생성합니다.
+`ChunkRepository` 인터페이스를 통해 메모리와 MySQL 구현체를 교체할 수
+있습니다. 메모리 저장소는 서버 종료 시 사라지며, MySQL 저장소는
+문서 메타데이터와 청크를 영속화합니다.
 
-문서 등록과 BM25 인덱스 재생성은 분리되어 있습니다. 여러 문서를
-`register_document()`로 등록하거나 교체한 뒤 `rebuild_index()`를 한 번
-실행합니다. 같은 `document_id`를 다시 등록하면 해당 문서의 기존 청크만
-교체하고 다른 문서의 청크는 유지합니다. 문서 등록이 정상적으로 끝나면 기존
-BM25 인덱스를 무효화하며, 문서 처리 중 오류가 발생하면 기존 인덱스를
+`TextDocumentRegistrationPipeline` 문서 등록은 S3 업로드, Version ID
+기반 원문 재조회, 청킹, MySQL 문서·청크 저장을 순서대로
+실행합니다. 문서 갱신 시 같은 `document_id`와 S3 객체 키를
+유지하면서 새 Version ID와 청크를 하나의 MySQL 트랜잭션으로
+교체합니다. DB 처리가 실패하면 기존 Version ID와 청크를
 유지합니다.
+
+문서 등록·교체와 BM25·FAISS 재색인은 분리됩니다. 문서 저장이
+정상 완료된 후에만 기존 인덱스를 무효화하고, 저장 중 오류가
+발생하면 기존 인덱스를 유지합니다. 여러 문서를 저장한 뒤
+MySQL 전체 청크로 `rebuild_index()`를 한 번 실행할 수 있습니다.
 
 임베딩은 애플리케이션의 `EmbeddingClient` 인터페이스를 통해 사용합니다.
 자동 테스트에서는 LangChain의 결정적 테스트 대역을 사용하고, 실제 실행에서는
@@ -175,6 +184,7 @@ firstfolio-ai/
 ├── app/
 │   ├── api/                    # FastAPI 라우터
 │   ├── application/
+│   │   ├── document_registration.py # S3·MySQL 문서 등록·교체
 │   │   ├── chunkers/
 │   │   │   └── paragraph.py    # 일반 텍스트 문단 청커
 │   │   ├── ports/
@@ -183,6 +193,7 @@ firstfolio-ai/
 │   │   └── search/
 │   │       ├── bm25_pipeline.py # BM25 검색 통합 파이프라인
 │   │       ├── evaluation.py    # 검색 품질 평가 지표·데이터 로더
+│   │       ├── faiss_pipeline.py # FAISS 재색인 파이프라인
 │   │       └── hybrid.py        # BM25·FAISS 하이브리드 검색
 │   ├── core/
 │   │   └── config.py           # 환경설정
@@ -191,17 +202,23 @@ firstfolio-ai/
 │   │   ├── document.py         # 원문 문서 도메인 모델
 │   │   └── search.py           # 검색 결과 도메인 모델
 │   ├── infrastructure/
+│   │   ├── database.py          # MySQL 연결
 │   │   ├── document_loaders/
 │   │   │   └── text.py         # 일반 텍스트 문서 로더
 │   │   ├── openai_embedding.py  # LangChain OpenAI 임베딩 어댑터
 │   │   ├── repositories/
-│   │   │   └── in_memory_chunk.py # 메모리 청크 저장소
+│   │   │   ├── in_memory_chunk.py # 메모리 청크 저장소
+│   │   │   ├── mysql_chunk.py    # MySQL 청크 저장소
+│   │   │   └── mysql_document.py # MySQL 문서 저장소
 │   │   ├── search/
 │   │   │   ├── bm25.py         # BM25 키워드 검색
 │   │   │   └── faiss.py        # FAISS 벡터 색인·검색·파일 저장
+│   │   ├── s3.py                # S3 원문 업로드·버전 조회
 │   │   └── tokenizers/
 │   │       └── kiwi.py         # Kiwi 한국어 토크나이저
 │   └── main.py                 # FastAPI 실행 진입점
+├── db/init/
+│   └── 001_create_document_tables.sql # AI 문서·청크 DDL
 ├── tests/
 │   ├── api/
 │   │   └── test_health.py
@@ -258,6 +275,8 @@ rank-bm25
 langchain-openai
 numpy
 faiss-cpu
+mysql-connector-python
+boto3
 ```
 
 ### requirements-dev.txt
@@ -296,6 +315,13 @@ EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_API_KEY=
 
 DATABASE_URL=
+
+MYSQL_HOST=mysql
+MYSQL_PORT=3306
+MYSQL_DATABASE=firstfolio_ai
+MYSQL_USER=firstfolio_ai
+MYSQL_PASSWORD=
+MYSQL_ROOT_PASSWORD=
 
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
@@ -394,6 +420,34 @@ print("연결 성공:", len(vector) == 1536)
 이 명령을 실행할 때만 실제 API 비용이 발생합니다. API 키와 벡터 전체는
 출력하지 않습니다.
 
+### MySQL 통합 테스트
+
+로컬 MySQL 컨테이너가 `healthy`인 상태에서만 실행합니다.
+이 테스트의 S3 호출은 Mock으로 대체되므로 AWS 비용이 발생하지
+않습니다.
+
+```bash
+docker compose exec -e RUN_MYSQL_INTEGRATION_TESTS=true ai-api python -m pytest
+```
+
+### 실제 S3·MySQL 문서 등록 검증
+
+2026-08-02 `data/local/raw/financial_textbook.txt`를 실제 S3에
+업로드하고 Version ID를 지정해 재조회한 뒤, 로컬 MySQL에
+문서 1건과 청크 406건으로 저장되는 것을 확인했습니다.
+검증 당시 `chunk_order`는 0~405, 고유 `chunk_key`는 406개였고
+`s3_version_id`는 빈 값이 아니었습니다. 로컬 `document_id`는 47이었으며
+환경별 AUTO_INCREMENT 상태에 따라 달라집니다.
+
+문서 등록과 재색인을 분리했으므로 등록 직후 상태는
+`pending`입니다. 실제 업로드는 S3 요청과 저장 사용량이
+발생하므로 일반 Pytest와 CI에서는 실행하지 않습니다.
+
+같은 날 Ruff 코드·형식 검사, MySQL 통합 테스트를 포함한
+Pytest 150개, Docker 이미지 빌드를 모두 통과했습니다. 통합
+테스트 임시 문서는 0건으로 정리되었고, 실제 교과서 406개
+청크는 유지됐습니다.
+
 ## 테스트 범위
 
 ### 현재 테스트
@@ -432,6 +486,12 @@ print("연결 성공:", len(vector) == 1536)
 - Recall@K·MRR 계산과 입력값 검증
 - JSON 평가 질문·정답 청크 키 로드
 - 동일한 평가 질문을 여러 검색 방식에 적용하고 지표 비교
+- MySQL 연결 성공·실패와 비밀번호 비노출
+- MySQL 문서·청크 저장, 조회, 교체와 트랜잭션 롤백
+- S3 원문 업로드, Version ID 획득·재조회와 오류 처리
+- S3 원문 재조회·청킹·MySQL 문서·청크 저장 파이프라인
+- 문서 교체 실패 시 기존 S3 Version ID와 MySQL 청크 유지
+- MySQL 전체 청크 기반 BM25·FAISS 재색인과 하이브리드 검색
 
 ### 향후 테스트 범위
 
@@ -609,11 +669,12 @@ Recall@5 80% 이상을 만족하고 가장 높은 MRR을 기록했습니다. 현
 
 ## 현재 상태
 
-FastAPI 기본 서버, Docker 개발 환경, 환경 변수, Pytest, Ruff, GitHub Actions
-CI, 일반 텍스트 문서 로더, 기본 문단 기반 청킹, 문서·청크 식별자, 청크
-저장소, Kiwi 기반 BM25 검색 파이프라인, 임베딩 인터페이스와 LangChain 기반
-OpenAI 임베딩 어댑터, FAISS 벡터 색인·검색과 로컬 파일 저장, BM25·FAISS
-하이브리드 검색과 기본 검색 품질 평가를 완료했습니다.
+FastAPI 기본 서버, Docker 개발 환경, Pytest, Ruff, GitHub Actions CI,
+일반 텍스트 로더·청킹, Kiwi·BM25·FAISS 하이브리드 검색과 기본
+검색 품질 평가를 완료했습니다. Docker Compose MySQL 8.0, AI
+문서·청크 DDL, MySQL 저장소, S3 Version ID 기반 원문 저장,
+문서 등록·교체 트랜잭션과 MySQL 청크 기반 재색인 연결도
+완료했습니다.
 
 현재 개발 진행 순서:
 
@@ -634,8 +695,15 @@ FastAPI 기본 서버 완료
 → FAISS 벡터 색인·검색 및 파일 저장·로드 완료
 → BM25·FAISS 하이브리드 검색 완료
 → 기본 검색 품질 평가 완료
-→ AI MySQL 문서·청크 저장
-→ S3 원문·FAISS 인덱스 저장
+→ Docker Compose MySQL 8.0·영속 볼륨 완료
+→ AI_DOCUMENTS·AI_DOCUMENT_CHUNKS DDL 완료
+→ FastAPI·MySQL 연결 완료
+→ MySQL 문서·청크 저장소·트랜잭션 완료
+→ S3 원문 업로드·Version ID 재조회 완료
+→ S3·MySQL 문서 등록·교체 파이프라인 완료
+→ MySQL 전체 청크 기반 BM25·FAISS·하이브리드 검색 완료
+→ `financial_textbook.txt` 실제 S3·MySQL 406개 청크 검증 완료
+→ FAISS 인덱스 S3 백업
 → 문서 유형별 청킹 전략 확장
 → 근거 기반 콘텐츠 생성
 → 생성 품질 검수

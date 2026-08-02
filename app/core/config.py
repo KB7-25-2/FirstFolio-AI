@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     bm25_weight: float = Field(default=0.7, ge=0, le=1)
     faiss_weight: float = Field(default=0.3, ge=0, le=1)
     embedding_model: str = "text-embedding-3-small"
+    mysql_host: str = "mysql"
+    mysql_port: int = Field(default=3306, ge=1, le=65535)
+    mysql_database: str = "firstfolio_ai"
+    mysql_user: str = "firstfolio_ai"
+    mysql_password: SecretStr = SecretStr("")
+    aws_region: str = "ap-northeast-2"
+    s3_bucket_name: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

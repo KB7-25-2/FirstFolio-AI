@@ -12,7 +12,7 @@ class EmptyDocumentError(ValueError):
 
 
 class TextDocumentLoader:
-    """텍스트 파일 -> 문서 객체로 반환"""
+    """텍스트 파일 또는 bytes를 문서 객체로 반환"""
 
     supported_suffix = ".txt"
 
@@ -40,4 +40,23 @@ class TextDocumentLoader:
             title=file_path.stem,
             content=content,
             source=str(file_path),
+        )
+
+    def load_bytes(
+        self,
+        content: bytes,
+        document_id: str,
+        title: str,
+        source: str,
+    ) -> SourceDocument:
+        decoded_content = content.decode("utf-8")
+
+        if not decoded_content.strip():
+            raise EmptyDocumentError(f"문서에 내용이 없습니다: {source}")
+
+        return SourceDocument(
+            document_id=document_id,
+            title=title,
+            content=decoded_content,
+            source=source,
         )

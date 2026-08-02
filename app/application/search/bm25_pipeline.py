@@ -42,9 +42,12 @@ class BM25SearchPipeline:
             chunks=chunks,
         )
 
-        self._search_engine = None
+        self.invalidate_index()
 
         return len(chunks)
+
+    def invalidate_index(self) -> None:
+        self._search_engine = None
 
     def rebuild_index(self) -> int:
         stored_chunks = self._chunk_repository.find_all()
