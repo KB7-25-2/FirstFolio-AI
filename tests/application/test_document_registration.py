@@ -33,12 +33,14 @@ def test_register_text_document(
     document_repository = Mock()
     document_repository.create_in_transaction.return_value = 12
     chunk_repository = Mock()
+    index_invalidator = Mock()
     settings = _settings()
 
     pipeline = TextDocumentRegistrationPipeline(
         settings=settings,
         document_repository=document_repository,
         chunk_repository=chunk_repository,
+        index_invalidator=index_invalidator,
     )
 
     document_id, chunk_count = pipeline.register(
@@ -97,6 +99,7 @@ def test_register_text_document(
     connection.commit.assert_called_once_with()
     connection.rollback.assert_not_called()
     connection.close.assert_called_once_with()
+    index_invalidator.assert_called_once_with()
 
 
 @patch("app.application.document_registration.upload_text_object")
@@ -181,11 +184,13 @@ def test_roll_back_document_when_chunk_storage_fails(
     chunk_repository.replace_document_chunks_in_transaction.side_effect = RuntimeError(
         "chunk storage failed"
     )
+    index_invalidator = Mock()
 
     pipeline = TextDocumentRegistrationPipeline(
         settings=_settings(),
         document_repository=document_repository,
         chunk_repository=chunk_repository,
+        index_invalidator=index_invalidator,
     )
 
     with pytest.raises(
@@ -203,3 +208,4 @@ def test_roll_back_document_when_chunk_storage_fails(
     connection.commit.assert_not_called()
     connection.rollback.assert_called_once_with()
     connection.close.assert_called_once_with()
+    index_invalidator.assert_not_called()

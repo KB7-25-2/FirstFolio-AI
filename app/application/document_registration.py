@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import datetime
 
 from app.application.chunkers.paragraph import ParagraphChunker
@@ -19,10 +20,12 @@ class TextDocumentRegistrationPipeline:
         settings: Settings,
         document_repository: MySQLDocumentRepository,
         chunk_repository: MySQLChunkRepository,
+        index_invalidator: Callable[[], None] | None = None,
     ) -> None:
         self._settings = settings
         self._document_repository = document_repository
         self._chunk_repository = chunk_repository
+        self._index_invalidator = index_invalidator
         self._loader = TextDocumentLoader()
         self._chunker = ParagraphChunker()
 
@@ -89,10 +92,13 @@ class TextDocumentRegistrationPipeline:
                 chunks=chunks,
             )
             connection.commit()
-
-            return document_id, len(chunks)
         except Exception:
             connection.rollback()
             raise
         finally:
             connection.close()
+
+        if self._index_invalidator is not None:
+            self._index_invalidator()
+
+        return document_id, len(chunks)
