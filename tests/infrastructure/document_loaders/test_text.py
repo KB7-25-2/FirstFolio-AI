@@ -72,3 +72,42 @@ def test_load_empty_document(tmp_path: Path) -> None:
             file_path,
             document_id="document-001",
         )
+
+
+def test_load_text_document_from_bytes() -> None:
+    original_content = "예금의 기본 개념\n\n예금은 금융기관에 돈을 맡기는 상품이다.\n"
+
+    document = TextDocumentLoader().load_bytes(
+        content=original_content.encode("utf-8"),
+        document_id="30",
+        title="금융 교과서",
+        source="financial_textbook.txt",
+    )
+
+    assert document.document_id == "30"
+    assert document.title == "금융 교과서"
+    assert document.content == original_content
+    assert document.source == "financial_textbook.txt"
+
+
+def test_reject_empty_text_document_bytes() -> None:
+    with pytest.raises(
+        EmptyDocumentError,
+        match="문서에 내용이 없습니다",
+    ):
+        TextDocumentLoader().load_bytes(
+            content=b"  \n\t",
+            document_id="30",
+            title="빈 문서",
+            source="empty.txt",
+        )
+
+
+def test_reject_non_utf8_document_bytes() -> None:
+    with pytest.raises(UnicodeDecodeError):
+        TextDocumentLoader().load_bytes(
+            content=b"\xff\xfe",
+            document_id="30",
+            title="잘못된 인코딩 문서",
+            source="invalid.txt",
+        )
