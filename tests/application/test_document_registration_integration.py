@@ -11,11 +11,15 @@ from app.application.search.faiss_pipeline import (
     FaissIndexNotBuiltError,
     FaissSearchPipeline,
 )
+from app.application.search.hybrid import HybridSearch
 from app.core.config import Settings
 from app.domain.chunk import DocumentChunk
 from app.infrastructure.database import create_mysql_connection
 from app.infrastructure.repositories.mysql_chunk import MySQLChunkRepository
 from app.infrastructure.repositories.mysql_document import MySQLDocumentRepository
+from app.infrastructure.search.bm25 import BM25Search
+from app.infrastructure.search.faiss import FaissVectorSearch
+from app.infrastructure.tokenizers.kiwi import KiwiTokenizer
 
 RUN_MYSQL_INTEGRATION_TESTS = (
     os.getenv(
@@ -359,6 +363,91 @@ def test_rebuild_faiss_index_after_mysql_chunk_replacement() -> None:
 
     if document_id is None:
         raise RuntimeError("FAISS 통합 테스트 document_id가 생성되지 않았습니다.")
+
+    assert _count_document_rows(
+        settings,
+        document_id,
+    ) == (0, 0)
+
+
+def test_hybrid_search_with_mysql_chunks() -> None:
+    settings = Settings(
+        search_top_k=3,
+        bm25_weight=0.7,
+        faiss_weight=0.3,
+    )
+    document_repository = MySQLDocumentRepository(settings)
+    chunk_repository = MySQLChunkRepository(settings)
+    registration_pipeline = TextDocumentRegistrationPipeline(
+        settings=settings,
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+    )
+
+    unique_suffix = uuid4().hex
+    unique_search_token = f"hybridmysql{unique_suffix}"
+    object_key = f"integration-tests/{unique_suffix}/hybrid_textbook.txt"
+    version_id = f"integration-version-{unique_suffix}"
+    stored_content = (
+        f"{unique_search_token} 예금은 금리를 제공한다.\n\n"
+        "채권은 만기와 이자를 가진다.\n\n"
+        "주식은 기업의 지분을 나타낸다."
+    ).encode()
+    document_id: int | None = None
+
+    try:
+        with (
+            patch(
+                "app.application.document_registration.upload_text_object",
+                return_value=version_id,
+            ),
+            patch(
+                "app.application.document_registration.download_text_object",
+                return_value=stored_content,
+            ),
+        ):
+            document_id, chunk_count = registration_pipeline.register(
+                content=stored_content,
+                object_key=object_key,
+                document_type="textbook",
+                category="integration-test",
+                title="Hybrid MySQL 통합 테스트",
+                original_filename="hybrid_textbook.txt",
+                publisher="FirstFolio",
+            )
+
+        stored_chunks = chunk_repository.find_all()
+        embedding_client = DeterministicFakeEmbedding(size=8)
+        hybrid_search = HybridSearch(
+            settings=settings,
+            bm25_search=BM25Search(
+                chunks=stored_chunks,
+                tokenizer=KiwiTokenizer(),
+            ),
+            faiss_search=FaissVectorSearch(
+                chunks=stored_chunks,
+                embedding_client=embedding_client,
+            ),
+            chunk_repository=chunk_repository,
+        )
+
+        results = hybrid_search.search(unique_search_token)
+
+        assert chunk_count == 3
+        assert results
+        assert results[0].chunk.document_id == str(document_id)
+        assert results[0].chunk.chunk_key == f"{document_id}:0"
+        assert unique_search_token in results[0].chunk.content
+        assert results[0].score > 0
+    finally:
+        if document_id is not None:
+            _delete_test_document(
+                settings,
+                document_id,
+            )
+
+    if document_id is None:
+        raise RuntimeError("Hybrid 통합 테스트 document_id가 생성되지 않았습니다.")
 
     assert _count_document_rows(
         settings,
