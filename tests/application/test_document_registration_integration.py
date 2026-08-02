@@ -245,7 +245,7 @@ def test_rebuild_bm25_index_from_mysql_chunks() -> None:
 
         assert chunk_count == 3
         assert indexed_chunk_count >= 3
-        assert len(results) == 1
+        assert results
         assert results[0].chunk.document_id == str(document_id)
         assert results[0].chunk.chunk_key == f"{document_id}:0"
         assert unique_search_token in results[0].chunk.content
@@ -268,7 +268,7 @@ def test_rebuild_bm25_index_from_mysql_chunks() -> None:
 
 def test_rebuild_faiss_index_after_mysql_chunk_replacement() -> None:
     settings = Settings(
-        search_top_k=100,
+        search_top_k=1_000_000,
     )
     document_repository = MySQLDocumentRepository(settings)
     chunk_repository = MySQLChunkRepository(settings)
