@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from langchain_core.embeddings import DeterministicFakeEmbedding
 
@@ -119,3 +121,54 @@ def test_rebuild_drops_replaced_document_chunks() -> None:
         "2:0",
     }
     assert "1:1" not in result_keys
+
+
+def test_save_load_and_search_same_results(
+    tmp_path: Path,
+) -> None:
+    repository = InMemoryChunkRepository()
+    repository.save_all(
+        [
+            _chunk("1", 0, "예금은 금리를 제공한다."),
+            _chunk("1", 1, "채권은 만기와 이자를 가진다."),
+            _chunk("2", 0, "주식은 기업의 지분을 나타낸다."),
+        ]
+    )
+    pipeline = _pipeline(repository)
+    index_path = tmp_path / "financial.faiss"
+    mapping_path = tmp_path / "financial.json"
+
+    pipeline.rebuild_index()
+    original_results = pipeline.search("예금은 금리를 제공한다.")
+    pipeline.save_index(
+        index_path=index_path,
+        mapping_path=mapping_path,
+    )
+    pipeline.invalidate_index()
+    pipeline.load_index(
+        index_path=index_path,
+        mapping_path=mapping_path,
+    )
+    restored_results = pipeline.search("예금은 금리를 제공한다.")
+
+    assert [result.chunk_key for result in restored_results] == [
+        result.chunk_key for result in original_results
+    ]
+    assert [result.score for result in restored_results] == pytest.approx(
+        [result.score for result in original_results]
+    )
+
+
+def test_reject_save_before_index_is_built(
+    tmp_path: Path,
+) -> None:
+    pipeline = _pipeline(InMemoryChunkRepository())
+
+    with pytest.raises(
+        FaissIndexNotBuiltError,
+        match="rebuild_index",
+    ):
+        pipeline.save_index(
+            index_path=tmp_path / "financial.faiss",
+            mapping_path=tmp_path / "financial.json",
+        )

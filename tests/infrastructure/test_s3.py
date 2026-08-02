@@ -6,7 +6,9 @@ from app.core.config import Settings
 from app.infrastructure.s3 import (
     check_s3_connection,
     create_s3_client,
+    download_binary_object,
     download_text_object,
+    upload_binary_object,
     upload_text_object,
 )
 
@@ -382,6 +384,237 @@ def test_close_s3_resources_when_body_read_fails(
             settings,
             "documents/test.txt",
             "version-001",
+        )
+
+    response_body.close.assert_called_once_with()
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_upload_binary_object_returns_version_id(
+    create_client_mock: Mock,
+) -> None:
+    client = Mock()
+    client.put_object.return_value = {
+        "VersionId": "faiss-version-001",
+    }
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+    content = b"faiss-index-bytes"
+
+    version_id = upload_binary_object(
+        settings,
+        "indexes/financial.faiss",
+        content,
+    )
+
+    assert version_id == "faiss-version-001"
+    client.put_object.assert_called_once_with(
+        Bucket="test-rag-bucket",
+        Key="indexes/financial.faiss",
+        Body=content,
+        ContentType="application/octet-stream",
+    )
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_reject_empty_binary_upload_object_key(
+    create_client_mock: Mock,
+) -> None:
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="object_key",
+    ):
+        upload_binary_object(
+            settings,
+            "   ",
+            b"faiss-index-bytes",
+        )
+
+    create_client_mock.assert_not_called()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_reject_binary_upload_response_without_version_id(
+    create_client_mock: Mock,
+) -> None:
+    client = Mock()
+    client.put_object.return_value = {}
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="VersionId",
+    ):
+        upload_binary_object(
+            settings,
+            "indexes/financial.faiss",
+            b"faiss-index-bytes",
+        )
+
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_close_s3_client_when_binary_upload_fails(
+    create_client_mock: Mock,
+) -> None:
+    client = Mock()
+    client.put_object.side_effect = RuntimeError("S3 binary upload failed")
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="S3 binary upload failed",
+    ):
+        upload_binary_object(
+            settings,
+            "indexes/financial.faiss",
+            b"faiss-index-bytes",
+        )
+
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_download_binary_object_by_version_id(
+    create_client_mock: Mock,
+) -> None:
+    response_body = Mock()
+    response_body.read.return_value = b"faiss-index-bytes"
+
+    client = Mock()
+    client.get_object.return_value = {
+        "Body": response_body,
+    }
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    content = download_binary_object(
+        settings,
+        "indexes/financial.faiss",
+        "faiss-version-001",
+    )
+
+    assert content == b"faiss-index-bytes"
+    client.get_object.assert_called_once_with(
+        Bucket="test-rag-bucket",
+        Key="indexes/financial.faiss",
+        VersionId="faiss-version-001",
+    )
+    response_body.read.assert_called_once_with()
+    response_body.close.assert_called_once_with()
+    client.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    ("object_key", "version_id", "error_message"),
+    [
+        ("   ", "faiss-version-001", "object_key"),
+        ("indexes/financial.faiss", "   ", "version_id"),
+    ],
+)
+@patch("app.infrastructure.s3.create_s3_client")
+def test_reject_empty_binary_download_identifier(
+    create_client_mock: Mock,
+    object_key: str,
+    version_id: str,
+    error_message: str,
+) -> None:
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=error_message,
+    ):
+        download_binary_object(
+            settings,
+            object_key,
+            version_id,
+        )
+
+    create_client_mock.assert_not_called()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_close_s3_client_when_binary_download_fails(
+    create_client_mock: Mock,
+) -> None:
+    client = Mock()
+    client.get_object.side_effect = RuntimeError("S3 binary download failed")
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="S3 binary download failed",
+    ):
+        download_binary_object(
+            settings,
+            "indexes/financial.faiss",
+            "faiss-version-001",
+        )
+
+    client.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.s3.create_s3_client")
+def test_close_s3_resources_when_binary_body_read_fails(
+    create_client_mock: Mock,
+) -> None:
+    response_body = Mock()
+    response_body.read.side_effect = RuntimeError("S3 binary body read failed")
+
+    client = Mock()
+    client.get_object.return_value = {
+        "Body": response_body,
+    }
+    create_client_mock.return_value = client
+
+    settings = Settings(
+        s3_bucket_name="test-rag-bucket",
+        _env_file=None,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="S3 binary body read failed",
+    ):
+        download_binary_object(
+            settings,
+            "indexes/financial.faiss",
+            "faiss-version-001",
         )
 
     response_body.close.assert_called_once_with()
