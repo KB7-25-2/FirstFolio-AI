@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.application.ports.chunk_repository import ChunkRepository
 from app.application.ports.embedding import EmbeddingClient
 from app.core.config import Settings
@@ -38,6 +40,33 @@ class FaissSearchPipeline:
         )
 
         return len(stored_chunks)
+
+    def save_index(
+        self,
+        index_path: str | Path,
+        mapping_path: str | Path,
+    ) -> None:
+        if self._search_engine is None:
+            raise FaissIndexNotBuiltError(
+                "저장할 FAISS 검색 인덱스가 없습니다.\n"
+                "rebuild_index()를 먼저 실행해 주세요."
+            )
+
+        self._search_engine.save(
+            index_path=index_path,
+            mapping_path=mapping_path,
+        )
+
+    def load_index(
+        self,
+        index_path: str | Path,
+        mapping_path: str | Path,
+    ) -> None:
+        self._search_engine = FaissVectorSearch.load(
+            index_path=index_path,
+            mapping_path=mapping_path,
+            embedding_client=self._embedding_client,
+        )
 
     def search(self, query: str) -> list[VectorSearchResult]:
         if self._search_engine is None:

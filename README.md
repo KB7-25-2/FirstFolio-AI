@@ -117,18 +117,18 @@ Spring 서버 요청
 → AI MySQL 문서·청크 저장 완료
 → S3 원문 저장 완료
 → MySQL 전체 청크 기반 BM25·FAISS 재색인 완료
-→ FAISS 인덱스 S3 백업
-→ 교과서·법령·뉴스 등 문서 유형별 청킹 확장
-→ 근거 기반 콘텐츠 생성
-→ 생성 품질 검수
+→ FAISS 인덱스 S3 백업·복구 완료
+→ 근거 기반 퀴즈 생성 MVP
+→ JSON·정답·해설·출처 검증
 → Spring 내부 API 연동
+→ 문서 유형별 청킹 확장
 ```
 
 `InMemoryChunkRepository`는 단위 테스트와 개발 대역으로 유지하고,
 `MySQLChunkRepository`는 운영 데이터 영속화와 BM25·FAISS 재색인에
 사용합니다. 두 구현은 같은 `ChunkRepository` 계약을 사용합니다.
-문서 유형별 청킹은 기본 검색 파이프라인과 저장 기반을 완성한 후
-독립 전략으로 확장합니다.
+문서 유형별 청킹은 퀴즈 생성 MVP 결과에서 검색 오류가 확인된 문서부터
+독립 전략으로 확장합니다. 현재는 기존 문단 청킹을 유지합니다.
 
 ## 데이터 저장 위치
 
@@ -172,6 +172,12 @@ FAISS 벡터 검색은 임베딩 벡터를 정규화한 뒤 내적 검색을 사
 저장하며, 별도 JSON 파일의 `chunk_key` 목록으로 청크 저장소와 연결합니다.
 인덱스와 키 매핑은 로컬 파일로 저장하고 다시 로드할 수 있습니다.
 
+FAISS 인덱스와 매핑 파일은 S3에 각각 업로드하고 두 객체의 Version ID를
+하나의 백업 참조값으로 반환합니다. 복구 시 정확한 두 버전을 내려받아
+검색 파이프라인에
+로드하므로 전체 청크를 다시 임베딩하지 않고 검색을 재개할 수 있습니다.
+서버 시작 시 자동 복구 연결은 운영 배포 구성이 확정된 뒤 추가합니다.
+
 하이브리드 검색은 BM25와 FAISS의 원점수 범위가 서로 다르므로 원점수를
 직접 더하지 않습니다. 각 검색 결과의 순위를 기준으로 `가중치 / 순위` 점수를
 계산하고, 같은 `chunk_key`가 양쪽에 있으면 점수를 합산합니다. 기본 가중치는
@@ -193,7 +199,8 @@ firstfolio-ai/
 │   │   └── search/
 │   │       ├── bm25_pipeline.py # BM25 검색 통합 파이프라인
 │   │       ├── evaluation.py    # 검색 품질 평가 지표·데이터 로더
-│   │       ├── faiss_pipeline.py # FAISS 재색인 파이프라인
+│   │       ├── faiss_backup.py  # FAISS S3 백업·복구
+│   │       ├── faiss_pipeline.py # FAISS 재색인·저장·복구 파이프라인
 │   │       └── hybrid.py        # BM25·FAISS 하이브리드 검색
 │   ├── core/
 │   │   └── config.py           # 환경설정
@@ -229,6 +236,8 @@ firstfolio-ai/
 │   │   └── search/
 │   │       ├── test_bm25_pipeline.py
 │   │       ├── test_evaluation.py
+│   │       ├── test_faiss_backup.py
+│   │       ├── test_faiss_pipeline.py
 │   │       └── test_hybrid.py
 │   ├── core/
 │   │   └── test_config.py
@@ -444,9 +453,18 @@ docker compose exec -e RUN_MYSQL_INTEGRATION_TESTS=true ai-api python -m pytest
 발생하므로 일반 Pytest와 CI에서는 실행하지 않습니다.
 
 같은 날 Ruff 코드·형식 검사, MySQL 통합 테스트를 포함한
-Pytest 150개, Docker 이미지 빌드를 모두 통과했습니다. 통합
+Pytest 164개, Docker 이미지 빌드를 모두 통과했습니다. 통합
 테스트 임시 문서는 0건으로 정리되었고, 실제 교과서 406개
 청크는 유지됐습니다.
+
+### 실제 FAISS S3 백업·복구 검증
+
+2026-08-02 결정적 테스트 임베딩으로 만든 작은 FAISS 인덱스와
+`chunk_key` 매핑 파일을 실제 S3에 업로드했습니다. 두 객체의 Version ID로
+다시 내려받아 복구 전후 검색 결과가 일치하는 것을 확인했습니다.
+
+이 검증에서는 OpenAI API와 MySQL을 호출하지 않았습니다. 교과서 406개
+청크의 실제 OpenAI 임베딩 인덱스 업로드는 아직 수행하지 않았습니다.
 
 ## 테스트 범위
 
@@ -489,6 +507,8 @@ Pytest 150개, Docker 이미지 빌드를 모두 통과했습니다. 통합
 - MySQL 연결 성공·실패와 비밀번호 비노출
 - MySQL 문서·청크 저장, 조회, 교체와 트랜잭션 롤백
 - S3 원문 업로드, Version ID 획득·재조회와 오류 처리
+- FAISS 인덱스·매핑 파일 S3 백업과 Version ID 기반 복구
+- 복구 전후 FAISS 검색 결과 일치 여부
 - S3 원문 재조회·청킹·MySQL 문서·청크 저장 파이프라인
 - 문서 교체 실패 시 기존 S3 Version ID와 MySQL 청크 유지
 - MySQL 전체 청크 기반 BM25·FAISS 재색인과 하이브리드 검색
@@ -673,8 +693,8 @@ FastAPI 기본 서버, Docker 개발 환경, Pytest, Ruff, GitHub Actions CI,
 일반 텍스트 로더·청킹, Kiwi·BM25·FAISS 하이브리드 검색과 기본
 검색 품질 평가를 완료했습니다. Docker Compose MySQL 8.0, AI
 문서·청크 DDL, MySQL 저장소, S3 Version ID 기반 원문 저장,
-문서 등록·교체 트랜잭션과 MySQL 청크 기반 재색인 연결도
-완료했습니다.
+문서 등록·교체 트랜잭션, MySQL 청크 기반 재색인 연결과 FAISS
+인덱스 S3 백업·복구도 완료했습니다.
 
 현재 개발 진행 순서:
 
@@ -703,11 +723,11 @@ FastAPI 기본 서버 완료
 → S3·MySQL 문서 등록·교체 파이프라인 완료
 → MySQL 전체 청크 기반 BM25·FAISS·하이브리드 검색 완료
 → `financial_textbook.txt` 실제 S3·MySQL 406개 청크 검증 완료
-→ FAISS 인덱스 S3 백업
-→ 문서 유형별 청킹 전략 확장
-→ 근거 기반 콘텐츠 생성
-→ 생성 품질 검수
+→ FAISS 인덱스 S3 백업·복구 완료
+→ 근거 기반 퀴즈 생성 MVP
+→ JSON·정답·해설·출처 검증
 → Spring 서버 연동
+→ 문서 유형별 청킹 전략 확장
 ```
 
 ### main 브랜치 반영 시점
@@ -718,10 +738,8 @@ FastAPI 기본 서버 완료
 
 1. **검색 기반 1차 완성**: 기본 검색 품질 평가를 완료하고 BM25·FAISS·
    하이브리드 검색의 기준 결과와 설정값을 기록한 시점
-2. **운영 저장 기반 완성**: AI MySQL, S3, 문서 유형별 청킹과 재색인·복구
-   흐름을 검증한 시점
-3. **RAG 콘텐츠 생성 MVP 완성**: 근거 기반 콘텐츠 생성, 품질 검수와 Spring
-   내부 API 계약을 검증한 시점
+2. **운영 저장 기반 완성**: AI MySQL, S3와 재색인·복구 흐름을 검증한 시점
+3. **RAG 콘텐츠 생성 MVP 완성**: 근거 기반 퀴즈 생성과 품질 검수를 완료한 시점
 
 기본 검색 품질 평가를 `dev`에 병합하고 전체 CI를 통과하면 검색 기반
 1차 버전의 `dev → main` PR을 생성합니다.
