@@ -102,3 +102,64 @@ class TextDocumentRegistrationPipeline:
             self._index_invalidator()
 
         return document_id, len(chunks)
+
+    def replace(
+        self,
+        *,
+        document_id: int,
+        content: bytes,
+    ) -> int:
+        decoded_content = content.decode("utf-8")
+        current_document = self._document_repository.find_by_id(document_id)
+
+        if not decoded_content.strip():
+            raise EmptyDocumentError(
+                f"문서에 내용이 없습니다: {current_document.original_filename}"
+            )
+
+        version_id = upload_text_object(
+            settings=self._settings,
+            object_key=current_document.s3_object_key,
+            content=content,
+        )
+        stored_content = download_text_object(
+            settings=self._settings,
+            object_key=current_document.s3_object_key,
+            version_id=version_id,
+        )
+        connection = create_mysql_connection(self._settings)
+        string_document_id = str(document_id)
+
+        try:
+            source_document = self._loader.load_bytes(
+                content=stored_content,
+                document_id=string_document_id,
+                title=current_document.title,
+                source=current_document.source_url
+                or current_document.original_filename,
+            )
+            chunks = self._chunker.chunk(source_document)
+
+            self._chunk_repository.replace_document_chunks_in_transaction(
+                connection=connection,
+                document_id=string_document_id,
+                chunks=chunks,
+            )
+            self._document_repository.update_storage_in_transaction(
+                connection=connection,
+                document_id=document_id,
+                s3_object_key=current_document.s3_object_key,
+                s3_version_id=version_id,
+                status="pending",
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+        if self._index_invalidator is not None:
+            self._index_invalidator()
+
+        return len(chunks)

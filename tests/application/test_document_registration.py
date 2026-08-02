@@ -209,3 +209,131 @@ def test_roll_back_document_when_chunk_storage_fails(
     connection.rollback.assert_called_once_with()
     connection.close.assert_called_once_with()
     index_invalidator.assert_not_called()
+
+
+@patch("app.application.document_registration.create_mysql_connection")
+@patch("app.application.document_registration.download_text_object")
+@patch("app.application.document_registration.upload_text_object")
+def test_replace_text_document(
+    upload_mock: Mock,
+    download_mock: Mock,
+    create_connection_mock: Mock,
+) -> None:
+    upload_mock.return_value = "version-002"
+    download_mock.return_value = ("새 예금 설명.\n\n새 채권 설명.").encode()
+    connection = Mock()
+    create_connection_mock.return_value = connection
+    document_repository = Mock()
+    document_repository.find_by_id.return_value = DocumentMetadata(
+        document_id=12,
+        document_type="textbook",
+        category="financial-education",
+        title="금융 교과서",
+        original_filename="financial_textbook.txt",
+        content_type="text/plain",
+        s3_object_key="documents/financial_textbook.txt",
+        s3_version_id="version-001",
+        source_url=None,
+        publisher="FirstFolio",
+        published_at=None,
+        status="ready",
+    )
+    chunk_repository = Mock()
+    index_invalidator = Mock()
+    settings = _settings()
+    pipeline = TextDocumentRegistrationPipeline(
+        settings=settings,
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+        index_invalidator=index_invalidator,
+    )
+
+    chunk_count = pipeline.replace(
+        document_id=12,
+        content=b"updated content",
+    )
+
+    assert chunk_count == 2
+    upload_mock.assert_called_once_with(
+        settings=settings,
+        object_key="documents/financial_textbook.txt",
+        content=b"updated content",
+    )
+    download_mock.assert_called_once_with(
+        settings=settings,
+        object_key="documents/financial_textbook.txt",
+        version_id="version-002",
+    )
+    replacement_call = chunk_repository.replace_document_chunks_in_transaction.call_args
+    assert replacement_call.kwargs["connection"] is connection
+    assert replacement_call.kwargs["document_id"] == "12"
+    assert [chunk.chunk_key for chunk in replacement_call.kwargs["chunks"]] == [
+        "12:0",
+        "12:1",
+    ]
+    document_repository.update_storage_in_transaction.assert_called_once_with(
+        connection=connection,
+        document_id=12,
+        s3_object_key="documents/financial_textbook.txt",
+        s3_version_id="version-002",
+        status="pending",
+    )
+    connection.commit.assert_called_once_with()
+    connection.rollback.assert_not_called()
+    connection.close.assert_called_once_with()
+    index_invalidator.assert_called_once_with()
+
+
+@patch("app.application.document_registration.create_mysql_connection")
+@patch("app.application.document_registration.download_text_object")
+@patch("app.application.document_registration.upload_text_object")
+def test_roll_back_replacement_when_document_update_fails(
+    upload_mock: Mock,
+    download_mock: Mock,
+    create_connection_mock: Mock,
+) -> None:
+    upload_mock.return_value = "version-002"
+    download_mock.return_value = b"updated content"
+    connection = Mock()
+    create_connection_mock.return_value = connection
+    document_repository = Mock()
+    document_repository.find_by_id.return_value = DocumentMetadata(
+        document_id=12,
+        document_type="textbook",
+        category="financial-education",
+        title="금융 교과서",
+        original_filename="financial_textbook.txt",
+        content_type="text/plain",
+        s3_object_key="documents/financial_textbook.txt",
+        s3_version_id="version-001",
+        source_url=None,
+        publisher="FirstFolio",
+        published_at=None,
+        status="ready",
+    )
+    document_repository.update_storage_in_transaction.side_effect = RuntimeError(
+        "document update failed"
+    )
+    chunk_repository = Mock()
+    index_invalidator = Mock()
+    pipeline = TextDocumentRegistrationPipeline(
+        settings=_settings(),
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+        index_invalidator=index_invalidator,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="document update failed",
+    ):
+        pipeline.replace(
+            document_id=12,
+            content=b"updated content",
+        )
+
+    chunk_repository.replace_document_chunks_in_transaction.assert_called_once()
+    connection.commit.assert_not_called()
+    connection.rollback.assert_called_once_with()
+    connection.close.assert_called_once_with()
+    index_invalidator.assert_not_called()

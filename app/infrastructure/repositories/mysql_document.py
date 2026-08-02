@@ -145,6 +145,70 @@ class MySQLDocumentRepository:
 
         return self._row_to_document(row)
 
+    def update_storage(
+        self,
+        document_id: int,
+        s3_object_key: str,
+        s3_version_id: str,
+        status: str,
+    ) -> None:
+        connection = create_mysql_connection(self._settings)
+
+        try:
+            self.update_storage_in_transaction(
+                connection=connection,
+                document_id=document_id,
+                s3_object_key=s3_object_key,
+                s3_version_id=s3_version_id,
+                status=status,
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def update_storage_in_transaction(
+        self,
+        connection: MySQLConnectionAbstract,
+        document_id: int,
+        s3_object_key: str,
+        s3_version_id: str,
+        status: str,
+    ) -> None:
+        self._validate_storage_update(
+            document_id=document_id,
+            s3_object_key=s3_object_key,
+            s3_version_id=s3_version_id,
+            status=status,
+        )
+        cursor = connection.cursor()
+
+        try:
+            cursor.execute(
+                """
+                UPDATE AI_DOCUMENTS
+                SET
+                    s3_object_key = %s,
+                    s3_version_id = %s,
+                    status = %s,
+                    error_message = NULL
+                WHERE document_id = %s
+                """,
+                (
+                    s3_object_key,
+                    s3_version_id,
+                    status,
+                    document_id,
+                ),
+            )
+
+            if cursor.rowcount != 1:
+                raise DocumentNotFoundError(f"문서를 찾을 수 없습니다: {document_id}")
+        finally:
+            cursor.close()
+
     @staticmethod
     def _validate_new_document(
         document: DocumentMetadata,
@@ -157,6 +221,25 @@ class MySQLDocumentRepository:
 
         if not document.s3_version_id.strip():
             raise ValueError("s3_version_id는 비어 있을 수 없습니다.")
+
+    @staticmethod
+    def _validate_storage_update(
+        document_id: int,
+        s3_object_key: str,
+        s3_version_id: str,
+        status: str,
+    ) -> None:
+        if document_id <= 0:
+            raise ValueError("document_id는 양의 정수여야 합니다.")
+
+        if not s3_object_key.strip():
+            raise ValueError("s3_object_key는 비어 있을 수 없습니다.")
+
+        if not s3_version_id.strip():
+            raise ValueError("s3_version_id는 비어 있을 수 없습니다.")
+
+        if not status.strip():
+            raise ValueError("status는 비어 있을 수 없습니다.")
 
     @staticmethod
     def _row_to_document(

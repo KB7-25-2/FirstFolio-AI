@@ -1,11 +1,12 @@
 import os
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import pytest
 from langchain_core.embeddings import DeterministicFakeEmbedding
 
 from app.application.document_registration import TextDocumentRegistrationPipeline
+from app.application.ports.chunk_repository import ChunkNotFoundError
 from app.application.search.bm25_pipeline import BM25SearchPipeline
 from app.application.search.faiss_pipeline import (
     FaissIndexNotBuiltError,
@@ -448,6 +449,153 @@ def test_hybrid_search_with_mysql_chunks() -> None:
 
     if document_id is None:
         raise RuntimeError("Hybrid 통합 테스트 document_id가 생성되지 않았습니다.")
+
+    assert _count_document_rows(
+        settings,
+        document_id,
+    ) == (0, 0)
+
+
+def test_replace_document_keeps_old_mysql_state_on_failure() -> None:
+    settings = Settings()
+    document_repository = MySQLDocumentRepository(settings)
+    chunk_repository = MySQLChunkRepository(settings)
+    registration_pipeline = TextDocumentRegistrationPipeline(
+        settings=settings,
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+    )
+    index_invalidator = Mock()
+    replacement_pipeline = TextDocumentRegistrationPipeline(
+        settings=settings,
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+        index_invalidator=index_invalidator,
+    )
+
+    unique_suffix = uuid4().hex
+    object_key = f"integration-tests/{unique_suffix}/replace_textbook.txt"
+    initial_version_id = f"initial-version-{unique_suffix}"
+    initial_content = ("기존 예금 설명.\n\n기존 채권 설명.\n\n기존 주식 설명.").encode()
+    document_id: int | None = None
+
+    try:
+        with (
+            patch(
+                "app.application.document_registration.upload_text_object",
+                return_value=initial_version_id,
+            ),
+            patch(
+                "app.application.document_registration.download_text_object",
+                return_value=initial_content,
+            ),
+        ):
+            document_id, initial_chunk_count = registration_pipeline.register(
+                content=initial_content,
+                object_key=object_key,
+                document_type="textbook",
+                category="integration-test",
+                title="문서 교체 통합 테스트",
+                original_filename="replace_textbook.txt",
+                publisher="FirstFolio",
+            )
+
+        failed_version_id = f"failed-version-{unique_suffix}"
+
+        with (
+            patch(
+                "app.application.document_registration.upload_text_object",
+                return_value=failed_version_id,
+            ),
+            patch(
+                "app.application.document_registration.download_text_object",
+                return_value="실패할 새 예금 설명.".encode(),
+            ),
+            patch.object(
+                document_repository,
+                "update_storage_in_transaction",
+                side_effect=RuntimeError("document update failed"),
+            ),
+            pytest.raises(
+                RuntimeError,
+                match="document update failed",
+            ),
+        ):
+            replacement_pipeline.replace(
+                document_id=document_id,
+                content=b"failed replacement",
+            )
+
+        document_after_failure = document_repository.find_by_id(document_id)
+        chunks_after_failure = chunk_repository.find_by_chunk_keys(
+            [
+                f"{document_id}:0",
+                f"{document_id}:1",
+                f"{document_id}:2",
+            ]
+        )
+
+        assert initial_chunk_count == 3
+        assert document_after_failure.s3_version_id == initial_version_id
+        assert [chunk.content for chunk in chunks_after_failure] == [
+            "기존 예금 설명.",
+            "기존 채권 설명.",
+            "기존 주식 설명.",
+        ]
+        index_invalidator.assert_not_called()
+
+        successful_version_id = f"successful-version-{unique_suffix}"
+        successful_content = ("새 예금 설명.\n\n새 채권 설명.").encode()
+
+        with (
+            patch(
+                "app.application.document_registration.upload_text_object",
+                return_value=successful_version_id,
+            ),
+            patch(
+                "app.application.document_registration.download_text_object",
+                return_value=successful_content,
+            ),
+        ):
+            replaced_chunk_count = replacement_pipeline.replace(
+                document_id=document_id,
+                content=successful_content,
+            )
+
+        replaced_document = document_repository.find_by_id(document_id)
+        replaced_chunks = chunk_repository.find_by_chunk_keys(
+            [
+                f"{document_id}:0",
+                f"{document_id}:1",
+            ]
+        )
+
+        assert replaced_chunk_count == 2
+        assert replaced_document.document_id == document_id
+        assert replaced_document.s3_object_key == object_key
+        assert replaced_document.s3_version_id == successful_version_id
+        assert replaced_document.status == "pending"
+        assert [chunk.content for chunk in replaced_chunks] == [
+            "새 예금 설명.",
+            "새 채권 설명.",
+        ]
+
+        with pytest.raises(
+            ChunkNotFoundError,
+            match=f"{document_id}:2",
+        ):
+            chunk_repository.find_by_chunk_keys([f"{document_id}:2"])
+
+        index_invalidator.assert_called_once_with()
+    finally:
+        if document_id is not None:
+            _delete_test_document(
+                settings,
+                document_id,
+            )
+
+    if document_id is None:
+        raise RuntimeError("문서 교체 통합 테스트 document_id가 생성되지 않았습니다.")
 
     assert _count_document_rows(
         settings,
