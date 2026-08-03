@@ -1,14 +1,14 @@
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal
 
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from app.application.ports.quiz_model import (
     GroundingModelResult,
     QuizModelResult,
 )
-from app.domain.quiz import GroundingValidation, Quiz
+from app.domain.quiz import GroundingValidation, Quiz, QuizCitation
 
 
 class OpenAIQuizModelClient:
@@ -23,12 +23,7 @@ class OpenAIQuizModelClient:
             timeout=timeout_seconds,
             max_retries=max_retries,
         )
-        self._quiz_client = client.with_structured_output(
-            Quiz,
-            method="json_schema",
-            include_raw=True,
-            strict=True,
-        )
+        self._client = client
         self._grounding_client = client.with_structured_output(
             GroundingValidation,
             method="json_schema",
@@ -39,8 +34,16 @@ class OpenAIQuizModelClient:
     def generate_quiz(
         self,
         prompt: str,
+        citation_candidates: Mapping[str, Sequence[str]],
     ) -> QuizModelResult:
-        response = self._quiz_client.invoke(prompt)
+        output_model = _build_quiz_output_model(citation_candidates)
+        quiz_client = self._client.with_structured_output(
+            output_model,
+            method="json_schema",
+            include_raw=True,
+            strict=True,
+        )
+        response = quiz_client.invoke(prompt)
         quiz, input_tokens, output_tokens = _parse_structured_response(
             response=response,
             expected_type=Quiz,
@@ -67,6 +70,34 @@ class OpenAIQuizModelClient:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
+
+
+def _build_quiz_output_model(
+    citation_candidates: Mapping[str, Sequence[str]],
+) -> type[Quiz]:
+    chunk_keys = tuple(citation_candidates)
+    evidence_texts = tuple(
+        evidence_text
+        for candidates in citation_candidates.values()
+        for evidence_text in candidates
+    )
+
+    if not chunk_keys or not evidence_texts:
+        raise ValueError("퀴즈 출처 후보는 비어 있을 수 없습니다.")
+
+    chunk_key_type = Literal.__getitem__(chunk_keys)
+    evidence_text_type = Literal.__getitem__(evidence_texts)
+    citation_model = create_model(
+        "ConstrainedQuizCitation",
+        __base__=QuizCitation,
+        chunk_key=(chunk_key_type, ...),
+        evidence_text=(evidence_text_type, ...),
+    )
+    return create_model(
+        "ConstrainedQuiz",
+        __base__=Quiz,
+        citations=(list[citation_model], ...),
+    )
 
 
 def _parse_structured_response[StructuredModel: BaseModel](

@@ -1,3 +1,4 @@
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -22,6 +23,7 @@ class QuizModelClient(Protocol):
     def generate_quiz(
         self,
         prompt: str,
+        citation_candidates: Mapping[str, Sequence[str]],
     ) -> QuizModelResult: ...
 
     def validate_grounding(

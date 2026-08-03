@@ -1,3 +1,4 @@
+from dataclasses import replace
 from unittest.mock import Mock
 
 import pytest
@@ -91,6 +92,7 @@ def _quiz(
 def _service(
     *,
     quiz: Quiz | None = None,
+    chunks: list[DocumentChunk] | None = None,
     search_results: list[SearchResult] | None = None,
     supported: bool = True,
 ) -> tuple[
@@ -98,7 +100,7 @@ def _service(
     Mock,
     InMemoryChunkRepository,
 ]:
-    chunks = _chunks()
+    chunks = chunks or _chunks()
     repository = InMemoryChunkRepository()
     repository.save_all(chunks)
     hybrid_search = Mock(spec=HybridSearch)
@@ -205,6 +207,34 @@ def test_reject_generated_question_type_different_from_request() -> None:
 
     assert "question_type_mismatch" in error.value.errors
     model_client.validate_grounding.assert_not_called()
+
+
+def test_restore_whitespace_only_citation_before_validation() -> None:
+    chunks = _chunks()
+    chunks[0] = replace(
+        chunks[0],
+        content="정기 예금은 인출하지 않는 예 금이다.",
+    )
+    quiz = _quiz(
+        citations=[
+            {
+                "chunk_key": "47:0",
+                "evidence_text": "정기 예금은 인출하지 않는 예금이다.",
+            }
+        ]
+    )
+    service, model_client, _ = _service(quiz=quiz, chunks=chunks)
+
+    result = service.generate(
+        question_type=QuestionType.SINGLE_CHOICE,
+        topic="예금",
+    )
+
+    original_evidence = "정기 예금은 인출하지 않는 예 금이다."
+    assert result.quiz.citations[0].evidence_text == original_evidence
+    assert result.sources[0].evidence_text == original_evidence
+    grounding_prompt = model_client.validate_grounding.call_args.args[0]
+    assert original_evidence in grounding_prompt
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,7 @@
 from unittest.mock import Mock, call
 
 import pytest
+from pydantic import ValidationError
 
 from app.domain.quiz import GroundingValidation, Quiz
 from app.infrastructure import openai_quiz
@@ -41,6 +42,13 @@ def _grounding_validation() -> GroundingValidation:
     )
 
 
+def _citation_candidates() -> dict[str, tuple[str, ...]]:
+    return {
+        "47:0": ("예금은 금융기관에 돈을 맡기는 상품이다.",),
+        "47:1": ("적금은 일정한 금액을 정기적으로 납입한다.",),
+    }
+
+
 def _raw_response(
     *,
     input_tokens: int = 120,
@@ -67,8 +75,8 @@ def _create_client(
     quiz_client = Mock()
     grounding_client = Mock()
     langchain_client.with_structured_output.side_effect = [
-        quiz_client,
         grounding_client,
+        quiz_client,
     ]
     create_chat_client = Mock(return_value=langchain_client)
     monkeypatch.setattr(openai_quiz, "ChatOpenAI", create_chat_client)
@@ -94,12 +102,6 @@ def test_configure_gpt_model_and_structured_output_schemas(
     )
     assert langchain_client.with_structured_output.call_args_list == [
         call(
-            Quiz,
-            method="json_schema",
-            include_raw=True,
-            strict=True,
-        ),
-        call(
             GroundingValidation,
             method="json_schema",
             include_raw=True,
@@ -119,12 +121,44 @@ def test_generate_quiz_with_token_usage(
         "parsing_error": None,
     }
 
-    result = client.generate_quiz("퀴즈 생성 프롬프트")
+    result = client.generate_quiz(
+        "퀴즈 생성 프롬프트",
+        _citation_candidates(),
+    )
 
     assert result.quiz == quiz
     assert result.input_tokens == 135
     assert result.output_tokens == 92
     quiz_client.invoke.assert_called_once_with("퀴즈 생성 프롬프트")
+
+
+def test_constrain_citation_to_retrieved_chunk_keys_and_exact_sentences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, create_chat_client, quiz_client, _ = _create_client(monkeypatch)
+    quiz = _quiz()
+    quiz_client.invoke.return_value = {
+        "raw": _raw_response(),
+        "parsed": quiz,
+        "parsing_error": None,
+    }
+
+    client.generate_quiz(
+        "퀴즈 생성 프롬프트",
+        _citation_candidates(),
+    )
+
+    output_model = (
+        create_chat_client.return_value.with_structured_output.call_args.args[0]
+    )
+    output_model.model_validate(quiz.model_dump())
+    invalid_payload = quiz.model_dump()
+    invalid_payload["citations"][0]["evidence_text"] = (
+        "예금은 금융기관에 돈을 맡기는 상품입니다."
+    )
+
+    with pytest.raises(ValidationError):
+        output_model.model_validate(invalid_payload)
 
 
 def test_validate_grounding_with_token_usage(
@@ -159,7 +193,10 @@ def test_use_zero_when_token_usage_is_missing(
         "parsing_error": None,
     }
 
-    result = client.generate_quiz("퀴즈 생성 프롬프트")
+    result = client.generate_quiz(
+        "퀴즈 생성 프롬프트",
+        _citation_candidates(),
+    )
 
     assert result.input_tokens == 0
     assert result.output_tokens == 0
@@ -176,7 +213,10 @@ def test_raise_error_when_structured_output_parsing_fails(
     }
 
     with pytest.raises(ValueError, match="JSON 구조 검증"):
-        client.generate_quiz("퀴즈 생성 프롬프트")
+        client.generate_quiz(
+            "퀴즈 생성 프롬프트",
+            _citation_candidates(),
+        )
 
 
 def test_raise_error_when_model_refuses_response(
@@ -190,4 +230,7 @@ def test_raise_error_when_model_refuses_response(
     }
 
     with pytest.raises(ValueError, match="응답 생성을 거부"):
-        client.generate_quiz("퀴즈 생성 프롬프트")
+        client.generate_quiz(
+            "퀴즈 생성 프롬프트",
+            _citation_candidates(),
+        )

@@ -4,11 +4,15 @@ from time import monotonic_ns
 from app.application.ports.chunk_repository import ChunkRepository
 from app.application.ports.quiz_model import QuizModelClient
 from app.application.quiz_prompts import (
+    build_citation_candidates,
     build_grounding_validation_prompt,
     build_quiz_generation_prompt,
 )
 from app.application.quiz_sources import build_quiz_sources
-from app.application.quiz_validation import validate_quiz_rules
+from app.application.quiz_validation import (
+    align_quiz_citation_evidence,
+    validate_quiz_rules,
+)
 from app.application.search.hybrid import HybridSearch
 from app.core.config import Settings
 from app.domain.quiz import (
@@ -60,9 +64,16 @@ class QuizGenerationService:
             topic=topic,
             retrieved_chunks=retrieved_chunks,
         )
-        generation_result = self._model_client.generate_quiz(generation_prompt)
-        rule_validation = validate_quiz_rules(
+        generation_result = self._model_client.generate_quiz(
+            generation_prompt,
+            build_citation_candidates(retrieved_chunks),
+        )
+        quiz = align_quiz_citation_evidence(
             quiz=generation_result.quiz,
+            retrieved_chunks=retrieved_chunks,
+        )
+        rule_validation = validate_quiz_rules(
+            quiz=quiz,
             retrieved_chunks=retrieved_chunks,
             existing_prompts=existing_prompts,
             expected_question_type=question_type,
@@ -72,7 +83,7 @@ class QuizGenerationService:
             raise QuizGenerationValidationError(rule_validation.errors)
 
         grounding_prompt = build_grounding_validation_prompt(
-            quiz=generation_result.quiz,
+            quiz=quiz,
             retrieved_chunks=retrieved_chunks,
         )
         grounding_result = self._model_client.validate_grounding(grounding_prompt)
@@ -81,7 +92,7 @@ class QuizGenerationService:
             raise QuizGenerationValidationError(["grounding_not_supported"])
 
         sources = build_quiz_sources(
-            quiz=generation_result.quiz,
+            quiz=quiz,
             chunk_repository=self._chunk_repository,
         )
         elapsed_ms = max(
@@ -90,7 +101,7 @@ class QuizGenerationService:
         )
 
         return QuizGenerationResult(
-            quiz=generation_result.quiz,
+            quiz=quiz,
             sources=sources,
             validation=QuizValidation(
                 schema_valid=True,

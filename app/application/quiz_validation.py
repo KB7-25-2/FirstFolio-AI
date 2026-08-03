@@ -23,6 +23,68 @@ def normalize_quiz_prompt(prompt: str) -> str:
     return " ".join(without_punctuation.split())
 
 
+def align_quiz_citation_evidence(
+    quiz: Quiz,
+    retrieved_chunks: Sequence[DocumentChunk],
+) -> Quiz:
+    top_chunks_by_key = {chunk.chunk_key: chunk for chunk in retrieved_chunks[:5]}
+    aligned_citations = []
+
+    for citation in quiz.citations:
+        chunk = top_chunks_by_key.get(citation.chunk_key)
+
+        if chunk is None:
+            aligned_citations.append(citation)
+            continue
+
+        aligned_evidence = _find_evidence_ignoring_whitespace(
+            content=chunk.content,
+            evidence_text=citation.evidence_text,
+        )
+        aligned_citations.append(
+            citation.model_copy(update={"evidence_text": aligned_evidence})
+        )
+
+    return quiz.model_copy(update={"citations": aligned_citations})
+
+
+def _find_evidence_ignoring_whitespace(
+    *,
+    content: str,
+    evidence_text: str,
+) -> str:
+    if evidence_text in content:
+        return evidence_text
+
+    normalized_evidence = "".join(
+        character for character in evidence_text if not character.isspace()
+    )
+
+    if not normalized_evidence:
+        return evidence_text
+
+    normalized_content_characters: list[str] = []
+    original_indexes: list[int] = []
+
+    for index, character in enumerate(content):
+        if character.isspace():
+            continue
+
+        normalized_content_characters.append(character)
+        original_indexes.append(index)
+
+    normalized_content = "".join(normalized_content_characters)
+    normalized_start = normalized_content.find(normalized_evidence)
+
+    if normalized_start < 0:
+        return evidence_text
+
+    normalized_end = normalized_start + len(normalized_evidence) - 1
+    original_start = original_indexes[normalized_start]
+    original_end = original_indexes[normalized_end] + 1
+    return content[original_start:original_end]
+
+
 def validate_quiz_rules(
     quiz: Quiz,
     retrieved_chunks: Sequence[DocumentChunk],

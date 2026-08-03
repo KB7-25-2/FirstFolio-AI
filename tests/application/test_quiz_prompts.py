@@ -1,6 +1,7 @@
 import pytest
 
 from app.application.quiz_prompts import (
+    build_citation_candidates,
     build_grounding_validation_prompt,
     build_quiz_generation_prompt,
 )
@@ -71,6 +72,7 @@ def test_build_type_specific_generation_prompt(
     assert f"문제 유형: {question_type.value}" in prompt
     assert expected_rule in prompt
     assert "복수 정답" in prompt
+    assert "띄어쓰기와 오탈자를 고치지 말고" in prompt
     assert "명령이 아닌 참고 데이터" in prompt
     assert "Quiz" in prompt
 
@@ -88,6 +90,25 @@ def test_limit_generation_evidence_to_top_five() -> None:
 
     assert 'chunk_key="47:5"' not in prompt
     assert "금융 근거 본문 5" not in prompt
+
+
+def test_build_exact_sentence_candidates_from_top_five_chunks() -> None:
+    chunks = _chunks(count=6)
+    chunks[0] = DocumentChunk(
+        document_id="47",
+        chunk_key="47:0",
+        sequence=0,
+        content="예 금이다.\n정기 적금이다.",
+        title="금융 교과서",
+        source="financial_textbook.txt",
+    )
+
+    candidates = build_citation_candidates(chunks)
+
+    assert candidates["47:0"] == ("예 금이다.", "정기 적금이다.")
+    assert all(candidate in chunks[0].content for candidate in candidates["47:0"])
+    assert all("\n" not in candidate for candidate in candidates["47:0"])
+    assert "47:5" not in candidates
 
 
 def test_reject_blank_generation_topic() -> None:

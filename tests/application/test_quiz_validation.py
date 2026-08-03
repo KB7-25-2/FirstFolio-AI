@@ -1,6 +1,9 @@
+from dataclasses import replace
+
 import pytest
 
 from app.application.quiz_validation import (
+    align_quiz_citation_evidence,
     normalize_quiz_prompt,
     validate_quiz_rules,
 )
@@ -287,6 +290,60 @@ def test_reject_evidence_not_in_chunk_content() -> None:
     )
 
     assert result.citation_valid is False
+    assert result.errors == ("citation_evidence_not_found:47:37",)
+
+
+def test_align_whitespace_only_citation_evidence_to_original_chunk() -> None:
+    chunks = _chunks()
+    chunks[0] = replace(
+        chunks[0],
+        content=("정기 예금은 약정 기간 동안 인출하지 않는 예 금이다."),
+    )
+    quiz = _quiz(
+        citations=[
+            {
+                "chunk_key": "47:37",
+                "evidence_text": ("정기 예금은 약정 기간 동안 인출하지 않는 예금이다."),
+            }
+        ]
+    )
+
+    aligned_quiz = align_quiz_citation_evidence(
+        quiz=quiz,
+        retrieved_chunks=chunks,
+    )
+
+    assert aligned_quiz.citations[0].evidence_text == (
+        "정기 예금은 약정 기간 동안 인출하지 않는 예 금이다."
+    )
+    assert aligned_quiz.citations[0].evidence_text in chunks[0].content
+
+
+def test_do_not_align_citation_when_non_whitespace_text_differs() -> None:
+    chunks = _chunks()
+    chunks[0] = replace(
+        chunks[0],
+        content="예금은 약정 기간 동안 인출하지 않는 예금이다.",
+    )
+    quiz = _quiz(
+        citations=[
+            {
+                "chunk_key": "47:37",
+                "evidence_text": "예금은 약정 기간 동안 출금하지 않는 예금이다.",
+            }
+        ]
+    )
+
+    aligned_quiz = align_quiz_citation_evidence(
+        quiz=quiz,
+        retrieved_chunks=chunks,
+    )
+    result = validate_quiz_rules(
+        quiz=aligned_quiz,
+        retrieved_chunks=chunks,
+    )
+
+    assert aligned_quiz == quiz
     assert result.errors == ("citation_evidence_not_found:47:37",)
 
 
