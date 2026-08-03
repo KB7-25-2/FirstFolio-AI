@@ -220,3 +220,40 @@ def test_reject_search_before_building_index() -> None:
         match="재생성할 문서 청크가 없습니다",
     ):
         pipeline.rebuild_index()
+
+
+def test_reject_search_after_explicit_index_invalidation(
+    tmp_path: Path,
+) -> None:
+    file_path = tmp_path / "deposit.txt"
+    file_path.write_text(
+        (
+            "예금은 금융기관에 돈을 맡기는 상품이다.\n\n"
+            "채권은 만기와 이자를 가진다.\n\n"
+            "주식은 기업의 지분을 나타낸다."
+        ),
+        encoding="utf-8",
+    )
+
+    pipeline = BM25SearchPipeline(
+        Settings(
+            search_top_k=1,
+            _env_file=None,
+        ),
+        chunk_repository=InMemoryChunkRepository(),
+    )
+    pipeline.register_document(
+        file_path,
+        document_id="deposit",
+    )
+    pipeline.rebuild_index()
+
+    pipeline.search("예금")
+
+    pipeline.invalidate_index()
+
+    with pytest.raises(
+        SearchIndexNotBuiltError,
+        match="rebuild_index",
+    ):
+        pipeline.search("예금")

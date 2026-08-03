@@ -22,3 +22,31 @@ services:
       - --port
       - "${APP_PORT:-8000}"
       - --reload
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-firstfolio_ai}"
+      MYSQL_USER: "${MYSQL_USER:-firstfolio_ai}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set in .env}"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set in .env}"
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD
+        - mysqladmin
+        - ping
+        - -h
+        - localhost
+        - --silent
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  mysql-data:
