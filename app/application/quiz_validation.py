@@ -27,9 +27,16 @@ def validate_quiz_rules(
     quiz: Quiz,
     retrieved_chunks: Sequence[DocumentChunk],
     existing_prompts: Sequence[str] = (),
+    expected_question_type: QuestionType | None = None,
 ) -> QuizRuleValidation:
     answer_errors: list[str] = []
     citation_errors: list[str] = []
+
+    if (
+        expected_question_type is not None
+        and quiz.question_type != expected_question_type
+    ):
+        answer_errors.append("question_type_mismatch")
 
     expected_usage = {
         QuestionType.TRUE_FALSE: UsageType.SUB_CHAPTER,

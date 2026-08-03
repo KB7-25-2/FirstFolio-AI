@@ -5,7 +5,7 @@ from app.application.quiz_validation import (
     validate_quiz_rules,
 )
 from app.domain.chunk import DocumentChunk
-from app.domain.quiz import Quiz
+from app.domain.quiz import QuestionType, Quiz
 
 
 def _quiz_payload(
@@ -119,6 +119,17 @@ def test_reject_usage_type_mismatch(
 
     assert result.answer_valid is False
     assert "usage_type_mismatch" in result.errors
+
+
+def test_reject_question_type_different_from_request() -> None:
+    result = validate_quiz_rules(
+        quiz=_quiz("SCENARIO"),
+        retrieved_chunks=_chunks(),
+        expected_question_type=QuestionType.SINGLE_CHOICE,
+    )
+
+    assert result.answer_valid is False
+    assert "question_type_mismatch" in result.errors
 
 
 def test_reject_invalid_option_count() -> None:
