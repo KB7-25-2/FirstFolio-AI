@@ -6,19 +6,19 @@ FirstFolio의 금융 문서 검색과 금융교육 콘텐츠 생성을 담당하
 
 AI 서버는 신뢰할 수 있는 금융 문서를 검색하고, 검색된 근거를 기반으로 금융교육 콘텐츠를 생성합니다.
 
-Frontend와 직접 통신하지 않으며, Spring Legacy 메인 서버가 AI 요청과 응답을 중계합니다.
+Frontend와 직접 통신하지 않습니다. 정기 금융교육 콘텐츠는 AI 서버가
+스케줄에 따라 생성·검증한 뒤 Spring Legacy 메인 서버로 전달하고, Spring이
+최종 저장과 게시를 담당합니다.
 
 ```text
-Frontend
-   ↓
-Spring Legacy Backend
-   ↓ 내부 REST API
-FastAPI AI Server
-   ↓ 구조화된 JSON
-Spring Legacy Backend
-   ↓
-Frontend
+AI Scheduler
+→ RAG 검색·콘텐츠 생성·검증
+→ Spring Legacy Backend 수신 API
+→ 메인 DB 저장·게시
 ```
+
+향후 포트폴리오 피드백처럼 사용자 요청으로 실행하는 기능은
+`Frontend → Spring → FastAPI → Spring → Frontend` 흐름을 사용합니다.
 
 ## 담당 범위
 
@@ -88,8 +88,8 @@ Frontend
 ### 검색·생성 파이프라인
 
 ```text
-Spring 서버 요청
-→ 요청 데이터 검증
+AI 배치 생성 계획 또는 향후 Spring 사용자 요청
+→ 입력 데이터 검증
 → 문서 유형·카테고리 필터링
 → 질문 형태소 분석 및 임베딩
 → BM25·FAISS 하이브리드 검색
@@ -97,8 +97,12 @@ Spring 서버 요청
 → 기능별 프롬프트 구성
 → LLM 호출
 → JSON 형식 및 근거 검증
-→ Spring 서버에 결과 반환
+→ 검증 완료된 구조화 결과 생성
 ```
+
+정기 콘텐츠는 AI 배치가 Spring 수신 API로 전달합니다. 사용자 요청형 기능은
+요청을 보낸 Spring 서버에 결과를 반환합니다. 두 경우 모두 최종 서비스
+데이터는 Spring 메인 DB에 저장합니다.
 
 ### 운영 흐름과 개발 순서
 
@@ -120,7 +124,11 @@ Spring 서버 요청
 → FAISS 인덱스 S3 백업·복구 완료
 → 근거 기반 퀴즈 생성 MVP
 → JSON·정답·해설·출처 검증
-→ Spring 내부 API 연동
+→ 배치 Dry Run·완전 동일 문제 중복 검사
+→ batch_id·item_id·JSONL 결과
+→ 최소 품질 검수 화면
+→ AI → Spring 콘텐츠 전달 연동
+→ 주간 스케줄링
 → 문서 유형별 청킹 확장
 ```
 
@@ -140,7 +148,7 @@ Spring 서버 요청
 | AI 서버 메모리 | 실행 중인 BM25 검색 객체 |
 | 메인 서버 MySQL | 검증 완료된 퀴즈, 시나리오, 일일 퀘스트, 금융 레터 |
 
-AI 서버가 생성한 콘텐츠는 구조화된 JSON으로 Spring 서버에 전달하며, 최종 서비스 데이터는 메인 서버의 MySQL에 저장합니다.
+AI 서버가 생성한 콘텐츠는 구조화된 JSON으로 Spring 서버에 전달하며, 최종 서비스 데이터는 메인 서버의 MySQL에 저장합니다. Spring 연동 전 사용하는 JSONL 결과는 로컬 검수용 산출물이며 운영 저장소가 아닙니다.
 
 MySQL 청크, BM25 결과와 FAISS 결과는 공통 `chunk_key`로 연결합니다.
 
@@ -685,10 +693,12 @@ Issue에는 다음 내용을 작성합니다.
 ## 서버 간 통신 원칙
 
 - Frontend는 AI 서버를 직접 호출하지 않습니다.
-- AI 서버는 Spring 서버의 내부 요청만 처리합니다.
+- 정기 퀴즈·금융 레터의 스케줄링과 생성·검증은 AI 서버가 담당합니다.
+- 정기 배치는 검증을 통과한 결과만 Spring 수신 API로 전달합니다.
+- 사용자 요청형 AI 기능은 Spring 서버의 인증·권한·입력 검증 후 호출합니다.
 - 요청과 응답은 JSON 형식을 사용합니다.
 - 서버 간 인증을 위한 내부 API 키를 사용합니다.
-- 하나의 요청 흐름을 추적할 수 있도록 `request_id` 또는 `trace_id`를 전달합니다.
+- 배치와 항목에는 `batch_id`·`item_id`, 사용자 요청 추적에는 `request_id` 또는 `trace_id`를 전달합니다.
 - 타임아웃, 실패 상태와 재시도 가능 여부를 명시적으로 반환합니다.
 - API 계약을 변경하기 전에 Spring 담당자와 협의합니다.
 - AI 서버는 메인 DB를 임의로 수정하지 않습니다.
@@ -776,7 +786,13 @@ FastAPI 기본 서버 완료
 → FAISS 인덱스 S3 백업·복구 완료
 → 근거 기반 퀴즈 생성 MVP 완료
 → JSON·정답·해설·출처 검증 완료
-→ Spring 서버 연동
+→ 기존 단건 생성 서비스를 재사용한 배치 Dry Run
+→ 배치 내부 완전 동일 문제 중복 검사
+→ `batch_id`·`item_id` 부여
+→ 항목별 성공·실패를 포함한 로컬 JSONL 결과 저장
+→ 최소 품질 검수 화면
+→ AI → Spring 콘텐츠 수신 API 계약·전송 연동
+→ 주간 스케줄링 연결
 → 문서 유형별 청킹 전략 확장
 ```
 
