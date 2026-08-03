@@ -11,6 +11,7 @@ from app.application.quiz_prompts import (
 from app.application.quiz_sources import build_quiz_sources
 from app.application.quiz_validation import (
     align_quiz_citation_evidence,
+    find_unsupported_numeric_claims,
     validate_quiz_rules,
 )
 from app.application.search.hybrid import HybridSearch
@@ -108,6 +109,27 @@ class QuizGenerationService:
                 stage="generation_validation",
                 retrieved_chunks=retrieved_chunks,
                 quiz=quiz,
+            )
+
+        unsupported_numeric_claims = find_unsupported_numeric_claims(
+            quiz=quiz,
+            retrieved_chunks=retrieved_chunks,
+        )
+
+        if unsupported_numeric_claims:
+            raise QuizGenerationValidationError(
+                ["grounding_not_supported"],
+                stage="grounding_validation",
+                retrieved_chunks=retrieved_chunks,
+                quiz=quiz,
+                grounding_validation=GroundingValidation(
+                    supported=False,
+                    reason=(
+                        "질문, 시나리오, 정답 선택지 또는 해설에 검색 근거로 "
+                        "확인할 수 없는 금융 수치가 있습니다."
+                    ),
+                    unsupported_claims=list(unsupported_numeric_claims),
+                ),
             )
 
         grounding_prompt = build_grounding_validation_prompt(
