@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     faiss_weight: float = Field(default=0.3, ge=0, le=1)
     embedding_model: str = "text-embedding-3-small"
     generation_model: str = "gpt-4o-mini"
+    openai_timeout_seconds: float = Field(default=30.0, gt=0)
+    openai_max_retries: int = Field(default=2, ge=0)
     mysql_host: str = "mysql"
     mysql_port: int = Field(default=3306, ge=1, le=65535)
     mysql_database: str = "firstfolio_ai"

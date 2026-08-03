@@ -73,7 +73,11 @@ def _create_client(
     create_chat_client = Mock(return_value=langchain_client)
     monkeypatch.setattr(openai_quiz, "ChatOpenAI", create_chat_client)
 
-    client = OpenAIQuizModelClient(model="gpt-4o-mini")
+    client = OpenAIQuizModelClient(
+        model="gpt-4o-mini",
+        timeout_seconds=45.0,
+        max_retries=3,
+    )
     return client, create_chat_client, quiz_client, grounding_client
 
 
@@ -83,7 +87,11 @@ def test_configure_gpt_model_and_structured_output_schemas(
     _, create_chat_client, _, _ = _create_client(monkeypatch)
     langchain_client = create_chat_client.return_value
 
-    create_chat_client.assert_called_once_with(model="gpt-4o-mini")
+    create_chat_client.assert_called_once_with(
+        model="gpt-4o-mini",
+        timeout=45.0,
+        max_retries=3,
+    )
     assert langchain_client.with_structured_output.call_args_list == [
         call(
             Quiz,

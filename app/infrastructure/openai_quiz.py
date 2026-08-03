@@ -15,8 +15,14 @@ class OpenAIQuizModelClient:
     def __init__(
         self,
         model: str,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 2,
     ) -> None:
-        client = ChatOpenAI(model=model)
+        client = ChatOpenAI(
+            model=model,
+            timeout=timeout_seconds,
+            max_retries=max_retries,
+        )
         self._quiz_client = client.with_structured_output(
             Quiz,
             method="json_schema",

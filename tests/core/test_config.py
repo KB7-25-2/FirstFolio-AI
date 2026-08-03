@@ -73,6 +73,49 @@ def test_load_generation_model_from_environment(
     assert settings.generation_model == "custom-generation-model"
 
 
+def test_use_default_openai_request_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("OPENAI_MAX_RETRIES", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.openai_timeout_seconds == 30.0
+    assert settings.openai_max_retries == 2
+
+
+def test_load_openai_request_settings_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_TIMEOUT_SECONDS", "45.5")
+    monkeypatch.setenv("OPENAI_MAX_RETRIES", "3")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.openai_timeout_seconds == 45.5
+    assert settings.openai_max_retries == 3
+
+
+@pytest.mark.parametrize(
+    ("environment_name", "invalid_value"),
+    [
+        ("OPENAI_TIMEOUT_SECONDS", "0"),
+        ("OPENAI_TIMEOUT_SECONDS", "-1"),
+        ("OPENAI_MAX_RETRIES", "-1"),
+    ],
+)
+def test_reject_invalid_openai_request_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    environment_name: str,
+    invalid_value: str,
+) -> None:
+    monkeypatch.setenv(environment_name, invalid_value)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
 def test_use_default_hybrid_search_weights(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
