@@ -191,11 +191,16 @@ firstfolio-ai/
 │   ├── api/                    # FastAPI 라우터
 │   ├── application/
 │   │   ├── document_registration.py # S3·MySQL 문서 등록·교체
+│   │   ├── quiz_generation.py # 검색·생성·근거검증 퀴즈 파이프라인
+│   │   ├── quiz_prompts.py    # 퀴즈 생성·근거검증 프롬프트
+│   │   ├── quiz_sources.py    # `chunk_key` 기반 출처 구성
+│   │   ├── quiz_validation.py # 퀴즈 규칙·인용·중복 검증
 │   │   ├── chunkers/
 │   │   │   └── paragraph.py    # 일반 텍스트 문단 청커
 │   │   ├── ports/
 │   │   │   ├── chunk_repository.py # 청크 저장소 인터페이스
-│   │   │   └── embedding.py    # 임베딩 인터페이스
+│   │   │   ├── embedding.py    # 임베딩 인터페이스
+│   │   │   └── quiz_model.py   # 퀴즈 생성·근거검증 모델 인터페이스
 │   │   └── search/
 │   │       ├── bm25_pipeline.py # BM25 검색 통합 파이프라인
 │   │       ├── evaluation.py    # 검색 품질 평가 지표·데이터 로더
@@ -207,12 +212,14 @@ firstfolio-ai/
 │   ├── domain/
 │   │   ├── chunk.py            # 문서 청크 도메인 모델
 │   │   ├── document.py         # 원문 문서 도메인 모델
+│   │   ├── quiz.py             # 퀴즈·출처·검증 JSON 모델
 │   │   └── search.py           # 검색 결과 도메인 모델
 │   ├── infrastructure/
 │   │   ├── database.py          # MySQL 연결
 │   │   ├── document_loaders/
 │   │   │   └── text.py         # 일반 텍스트 문서 로더
 │   │   ├── openai_embedding.py  # LangChain OpenAI 임베딩 어댑터
+│   │   ├── openai_quiz.py       # `gpt-4o-mini` 구조화 퀴즈 어댑터
 │   │   ├── repositories/
 │   │   │   ├── in_memory_chunk.py # 메모리 청크 저장소
 │   │   │   ├── mysql_chunk.py    # MySQL 청크 저장소
@@ -223,7 +230,8 @@ firstfolio-ai/
 │   │   ├── s3.py                # S3 원문 업로드·버전 조회
 │   │   └── tokenizers/
 │   │       └── kiwi.py         # Kiwi 한국어 토크나이저
-│   └── main.py                 # FastAPI 실행 진입점
+│   ├── main.py                 # FastAPI 실행 진입점
+│   └── quiz_mvp.py             # 퀴즈 생성 MVP CLI 진입점
 ├── db/init/
 │   └── 001_create_document_tables.sql # AI 문서·청크 DDL
 ├── tests/
@@ -466,6 +474,46 @@ Pytest 164개, Docker 이미지 빌드를 모두 통과했습니다. 통합
 이 검증에서는 OpenAI API와 MySQL을 호출하지 않았습니다. 교과서 406개
 청크의 실제 OpenAI 임베딩 인덱스 업로드는 아직 수행하지 않았습니다.
 
+### 실제 퀴즈 생성 MVP 검증
+
+2026-08-03 MySQL에 저장된 `financial_textbook.txt` 406개 청크와
+BM25·FAISS 하이브리드 검색, `gpt-4o-mini`를 연결해 세 문제
+유형의 실제 생성을 확인했습니다.
+
+```bash
+docker compose exec -T ai-api python -m app.quiz_mvp \
+  --type true_false \
+  --topic "요구불 예금의 특징"
+
+docker compose exec -T ai-api python -m app.quiz_mvp \
+  --type single_choice \
+  --topic "예금의 특징"
+
+docker compose exec -T ai-api python -m app.quiz_mvp \
+  --type scenario \
+  --topic "정기 예금 선택 상황"
+```
+
+| 문제 유형 | `usage_type` | 출처 `chunk_key` | 입력 토큰 | 출력 토큰 | 결과 |
+|---|---|---|---:|---:|---|
+| `TRUE_FALSE` | `SUB_CHAPTER` | `47:287` | 9,751 | 303 | 통과 |
+| `SINGLE_CHOICE` | `SUB_CHAPTER` | `47:189` | 9,661 | 374 | 통과 |
+| `SCENARIO` | `MAIN_CHAPTER` | `47:195` | 7,849 | 551 | 통과 |
+
+위 토큰 수는 각 유형을 한 번씩 실행한 개발 환경 표본이며 고정된
+비용·성능 기준선이 아닙니다. 로컬 `document_id` 47과 `chunk_key`는
+해당 검증 환경의 값으로, 데이터베이스에 따라 달라질 수 있습니다.
+
+세 유형 모두 JSON 구조, 선택지, 단일 정답, 해설, Top 5 내
+출처, 원문 근거 문장과 최종 근거검증을 통과했습니다.
+근거가 부족하면 `grounding_not_supported`로 계속 차단하며,
+실패 시 CLI에 검증 단계, `reason`, `unsupported_claims`를 출력합니다.
+
+이 명령은 실제 OpenAI API 비용이 발생하므로 일반 Pytest와 CI에서는
+실행하지 않습니다. 자동 테스트는 OpenAI 호출을 Mock으로 대체합니다.
+최종 검증에서 Pytest 249개가 통과했고 7개가 스킵됐으며, Ruff
+코드·형식 검사도 통과했습니다.
+
 ## 테스트 범위
 
 ### 현재 테스트
@@ -512,18 +560,19 @@ Pytest 164개, Docker 이미지 빌드를 모두 통과했습니다. 통합
 - S3 원문 재조회·청킹·MySQL 문서·청크 저장 파이프라인
 - 문서 교체 실패 시 기존 S3 Version ID와 MySQL 청크 유지
 - MySQL 전체 청크 기반 BM25·FAISS 재색인과 하이브리드 검색
+- 세 퀴즈 유형의 Pydantic JSON 구조와 선택지·단일 정답 규칙
+- Top 5 검색 근거 프롬프트와 `chunk_key`·원문 부분 문자열 검증
+- `gpt-4o-mini` 구조화 응답, 타임아웃·재시도와 토큰 사용량 추출
+- 검색·생성 규칙·근거검증 실패 차단과 CLI 진단 JSON
+- MySQL·BM25·FAISS·OpenAI를 연결한 퀴즈 생성 MVP 실행 흐름
 
 ### 향후 테스트 범위
 
 - 문서 전처리
 - 문서 유형별 청킹
-- 프롬프트 입력 구성
-- LLM 출력 JSON 검증
-- 검색 청크와 답변 근거 일치 여부
 - FastAPI 요청·응답 형식
 - Spring 서버 연동 계약
 - 외부 API 실패 및 타임아웃
-- 검색 결과가 부족한 경우의 대체 처리
 
 CI에서는 실제 OpenAI, MySQL 및 S3를 호출하지 않고 Mock 또는 테스트 데이터를 사용합니다.
 
@@ -694,7 +743,8 @@ FastAPI 기본 서버, Docker 개발 환경, Pytest, Ruff, GitHub Actions CI,
 검색 품질 평가를 완료했습니다. Docker Compose MySQL 8.0, AI
 문서·청크 DDL, MySQL 저장소, S3 Version ID 기반 원문 저장,
 문서 등록·교체 트랜잭션, MySQL 청크 기반 재색인 연결과 FAISS
-인덱스 S3 백업·복구도 완료했습니다.
+인덱스 S3 백업·복구, 근거 기반 퀴즈 생성 MVP와 세 문제
+유형의 실제 OpenAI 검증도 완료했습니다.
 
 현재 개발 진행 순서:
 
@@ -724,8 +774,8 @@ FastAPI 기본 서버 완료
 → MySQL 전체 청크 기반 BM25·FAISS·하이브리드 검색 완료
 → `financial_textbook.txt` 실제 S3·MySQL 406개 청크 검증 완료
 → FAISS 인덱스 S3 백업·복구 완료
-→ 근거 기반 퀴즈 생성 MVP
-→ JSON·정답·해설·출처 검증
+→ 근거 기반 퀴즈 생성 MVP 완료
+→ JSON·정답·해설·출처 검증 완료
 → Spring 서버 연동
 → 문서 유형별 청킹 전략 확장
 ```
