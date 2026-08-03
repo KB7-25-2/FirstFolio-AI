@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import Mock, patch
 
 import pytest
@@ -195,6 +196,9 @@ def test_find_all_returns_chunks(
             "첫 번째 본문",
             "금융 교과서",
             "financial_textbook.txt",
+            "저축과 저축 상품",
+            None,
+            None,
         ),
         (
             12,
@@ -203,6 +207,9 @@ def test_find_all_returns_chunks(
             "두 번째 본문",
             "금융 교과서",
             "https://example.com/textbook",
+            None,
+            "https://example.com/textbook",
+            datetime(2026, 8, 3, 9, 0),
         ),
     ]
     create_connection_mock.return_value = connection
@@ -223,6 +230,7 @@ def test_find_all_returns_chunks(
             content="첫 번째 본문",
             title="금융 교과서",
             source="financial_textbook.txt",
+            heading="저축과 저축 상품",
         ),
         DocumentChunk(
             document_id="12",
@@ -231,6 +239,8 @@ def test_find_all_returns_chunks(
             content="두 번째 본문",
             title="금융 교과서",
             source="https://example.com/textbook",
+            source_url="https://example.com/textbook",
+            published_at=datetime(2026, 8, 3, 9, 0),
         ),
     ]
     cursor.close.assert_called_once_with()
@@ -250,6 +260,9 @@ def test_find_by_chunk_keys_preserves_requested_order(
             "두 번째 본문",
             "금융 교과서",
             "financial_textbook.txt",
+            "저축과 저축 상품",
+            None,
+            None,
         ),
         (
             12,
@@ -258,6 +271,9 @@ def test_find_by_chunk_keys_preserves_requested_order(
             "첫 번째 본문",
             "금융 교과서",
             "financial_textbook.txt",
+            None,
+            None,
+            None,
         ),
     ]
     create_connection_mock.return_value = connection
@@ -291,6 +307,9 @@ def test_find_by_chunk_keys_raises_when_key_is_missing(
             "첫 번째 본문",
             "금융 교과서",
             "financial_textbook.txt",
+            None,
+            None,
+            None,
         )
     ]
     create_connection_mock.return_value = connection

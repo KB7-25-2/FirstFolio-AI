@@ -53,6 +53,26 @@ def test_load_embedding_model_from_environment(
     assert settings.embedding_model == "custom-embedding-model"
 
 
+def test_use_default_generation_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GENERATION_MODEL", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.generation_model == "gpt-4o-mini"
+
+
+def test_load_generation_model_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GENERATION_MODEL", "custom-generation-model")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.generation_model == "custom-generation-model"
+
+
 def test_use_default_hybrid_search_weights(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

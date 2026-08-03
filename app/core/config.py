@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     bm25_weight: float = Field(default=0.7, ge=0, le=1)
     faiss_weight: float = Field(default=0.3, ge=0, le=1)
     embedding_model: str = "text-embedding-3-small"
+    generation_model: str = "gpt-4o-mini"
     mysql_host: str = "mysql"
     mysql_port: int = Field(default=3306, ge=1, le=65535)
     mysql_database: str = "firstfolio_ai"
