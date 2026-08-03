@@ -115,7 +115,14 @@ def main(
     except QuizGenerationValidationError as error:
         print(
             json.dumps(
-                {"errors": list(error.errors)},
+                {
+                    "errors": list(error.errors),
+                    "diagnostics": {
+                        "stage": error.stage,
+                        "reason": error.reason,
+                        "unsupported_claims": list(error.unsupported_claims),
+                    },
+                },
                 ensure_ascii=False,
             ),
             file=sys.stderr,

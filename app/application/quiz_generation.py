@@ -15,8 +15,11 @@ from app.application.quiz_validation import (
 )
 from app.application.search.hybrid import HybridSearch
 from app.core.config import Settings
+from app.domain.chunk import DocumentChunk
 from app.domain.quiz import (
+    GroundingValidation,
     QuestionType,
+    Quiz,
     QuizExecution,
     QuizGenerationResult,
     QuizValidation,
@@ -27,8 +30,25 @@ class QuizGenerationValidationError(ValueError):
     def __init__(
         self,
         errors: Sequence[str],
+        *,
+        stage: str = "generation_validation",
+        retrieved_chunks: Sequence[DocumentChunk] = (),
+        quiz: Quiz | None = None,
+        grounding_validation: GroundingValidation | None = None,
     ) -> None:
         self.errors = tuple(errors)
+        self.stage = stage
+        self.retrieved_chunks = tuple(retrieved_chunks)
+        self.quiz = quiz
+        self.grounding_validation = grounding_validation
+        self.reason = (
+            grounding_validation.reason if grounding_validation is not None else None
+        )
+        self.unsupported_claims = (
+            tuple(grounding_validation.unsupported_claims)
+            if grounding_validation is not None
+            else ()
+        )
         super().__init__("퀴즈 생성 결과 검증에 실패했습니다.")
 
 
@@ -57,7 +77,10 @@ class QuizGenerationService:
         retrieved_chunks = [result.chunk for result in search_results[:5]]
 
         if not retrieved_chunks:
-            raise QuizGenerationValidationError(["search_result_required"])
+            raise QuizGenerationValidationError(
+                ["search_result_required"],
+                stage="search",
+            )
 
         generation_prompt = build_quiz_generation_prompt(
             question_type=question_type,
@@ -80,7 +103,12 @@ class QuizGenerationService:
         )
 
         if rule_validation.errors:
-            raise QuizGenerationValidationError(rule_validation.errors)
+            raise QuizGenerationValidationError(
+                rule_validation.errors,
+                stage="generation_validation",
+                retrieved_chunks=retrieved_chunks,
+                quiz=quiz,
+            )
 
         grounding_prompt = build_grounding_validation_prompt(
             quiz=quiz,
@@ -89,7 +117,13 @@ class QuizGenerationService:
         grounding_result = self._model_client.validate_grounding(grounding_prompt)
 
         if not grounding_result.validation.supported:
-            raise QuizGenerationValidationError(["grounding_not_supported"])
+            raise QuizGenerationValidationError(
+                ["grounding_not_supported"],
+                stage="grounding_validation",
+                retrieved_chunks=retrieved_chunks,
+                quiz=quiz,
+                grounding_validation=grounding_result.validation,
+            )
 
         sources = build_quiz_sources(
             quiz=quiz,

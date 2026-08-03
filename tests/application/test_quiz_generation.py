@@ -138,6 +138,126 @@ def _service(
     return service, model_client, repository
 
 
+@pytest.fixture
+def actual_grounding_failure_case() -> tuple[
+    list[DocumentChunk],
+    Quiz,
+    GroundingValidation,
+]:
+    chunks = [
+        DocumentChunk(
+            document_id="47",
+            chunk_key="47:189",
+            sequence=189,
+            content=(
+                "저축 상품의 종류와 특징 가계가 여유 자금을 은행에 맡기고 "
+                "취득하는 저축 상품은 크게 요구불 예금과 저 축성 예금으로 나눌 수 "
+                "있다. 요구불 예금이란 수시로 하는 입출금이 자유롭다. 그 런데 은행의 "
+                "입장에서는 예금자가계좌에서 언제 얼마를 인출할지 알 수 없는 예금 "
+                "이다. 은행은 요구불 예금 계좌에 들어있는 예금은 안심하고 대출에 "
+                "사용해서 수억을 내기 어려우므로 예금자에게 낮은 금리를 지급한나. 시중 "
+                "은행이 공지하는 평균 적인 요구불 예금 금리는 0.1% 정도 수준으로 낮다. "
+                "가계는 지출에 쓸 돈을 수중에 지니기보다는 요구불 예금 계좌에 넣어 놓고, "
+                "신용카드나 직불 카드를 그 계죄와 연결하여 사용함으로써 지출이 편리해진다. "
+                "요구불 혜금은 지급의 편의성을 위한 예금이지 이자 수익을 올리기 위한 예금이 "
+                "아니다. 직 장에서는 직원이 지정한 요구불 예금 계좌에 그의 급여를 입금해 "
+                "준다, 요구불 예금에 들어 있는 돈은 이름만 예금일 뿐이지 현금이나 "
+                "마찬가지다. -계 1현.신 (연 다, %그일 1-@/ 급너가 시눌메 쓰미시싸시피 과잉"
+            ),
+            title="금융 교과서",
+            source="financial_textbook.txt",
+        ),
+        DocumentChunk(
+            document_id="47",
+            chunk_key="47:188",
+            sequence=188,
+            content=(
+                "가계는 저축으로 생긴 여유 자금을 은행, 상호 저축 은행, 신용 험동조함 "
+                "동의 예 금 기관에서 제공하는 저축 상품에 넣을 수 있다. 예금이나 적금이 "
+                "대표적인 저축 상 품이다. 저축 상품은 돈을 맡긴 은행이 망 하지 않는 한 "
+                "원금이 보장된다. 따라서 저 축 상품은 안전하게 위험 없이 돈을 모으는 데 "
+                "적합한 금융 수단이다. 이에 비해서 투자 상품이란 투자한 금융 자산의 가격이 "
+                "변 동하여 원금 손실의 위험이 있는 금융 상품 이다. 주식, 채권, 펀드, 피생 "
+                "금융 상품 등이 대표적이다. 저축 상품과 투자 상품의 좋류와 특징에 대해서 "
+                "알아보자."
+            ),
+            title="금융 교과서",
+            source="financial_textbook.txt",
+        ),
+        DocumentChunk(
+            document_id="47",
+            chunk_key="47:274",
+            sequence=274,
+            content=(
+                "주식이나 채권, 부동산 등 자산 시장의 중요한 특징 가운데 하나는 미래의 "
+                "자산 가 격에 대한 사람들의 전망이 지금 그 자산의 가격에 바로 영향을 미친다는 "
+                "점이다. 앞"
+            ),
+            title="금융 교과서",
+            source="financial_textbook.txt",
+        ),
+        DocumentChunk(
+            document_id="47",
+            chunk_key="47:217",
+            sequence=217,
+            content=(
+                "2) 채권, 주식, 펀드\n투자 성격을 지닌 금융 상품에는 채권, 주식, 펀드, "
+                "파생 금융 상품이 있다. 그중에 서 주식이나 채권처럼 매매가 가능한 금융 투자 "
+                "상품을 증권이라고 한다. 채권, 주 식, 펀드 등이 지닌 각각의 성격과 특징을 "
+                "자세히 알아보자. 채권"
+            ),
+            title="금융 교과서",
+            source="financial_textbook.txt",
+        ),
+        DocumentChunk(
+            document_id="47",
+            chunk_key="47:190",
+            sequence=190,
+            content=(
+                "저축성 예금에는 정기 예금과 정기 적금이 있다. 정기 예금은 일정한 액수의 돈을 "
+                "은행에 맡겨 두고 정하는 기간 동안 인춤하지 않겠다고 은행과 약속하는 형식의 "
+                "예 금이다. 정기 예금의 가능한 약정 기간은 1개월 이상 5년 이내이다. 은행으로서는 "
+                "정 기 예금 계좌에 들어 있는 돈은 약정 기간 동안 안심하고 대출에 이용해서 "
+                "수익을 올 릴 수 있기 떠문에 요구불 예금보다 더 높은 금리를 지급한다. 일반적으로 "
+                "예치 약정 기간이 길수록 정기 예금 금리는 높아진다."
+            ),
+            title="금융 교과서",
+            source="financial_textbook.txt",
+        ),
+    ]
+    quiz = _quiz(
+        prompt="저축 상품의 종류 중 요구불 예금의 특징으로 옭은 것은 무엇인가요?",
+        options=[
+            {"option_id": "1", "text": "요구불 예금은 수시로 입출금이 가능하다."},
+            {"option_id": "2", "text": "요구불 예금은 원금이 보장되지 않는다."},
+            {"option_id": "3", "text": "요구불 예금의 금리는 보통 높다."},
+            {"option_id": "4", "text": "요구불 예금은 장기 투자에 적합하다."},
+        ],
+        explanation="요구불 예금이란 수시로 하는 입출금이 자유롭다.",
+        citations=[
+            {
+                "chunk_key": "47:189",
+                "evidence_text": "요구불 예금이란 수시로 하는 입출금이 자유롭다.",
+            }
+        ],
+    )
+    validation = GroundingValidation(
+        supported=False,
+        reason=(
+            "The claim that '요구불 예금은 원금이 보장되지 않는다' (option 2) "
+            "is unsupported by the provided evidence. It is stated that '저축 상품은 "
+            "돈을 맡긴 은행이 망하지 않는 한 원금이 보장된다', which implies that "
+            "요구불 예금 does provide principal protection."
+        ),
+        unsupported_claims=[
+            "요구불 예금은 원금이 보장되지 않는다.",
+            "요구불 예금의 금리는 보통 높다.",
+            "요구불 예금은 장기 투자에 적합하다.",
+        ],
+    )
+    return chunks, quiz, validation
+
+
 @pytest.mark.parametrize(
     "question_type",
     [
@@ -192,6 +312,11 @@ def test_stop_before_generation_without_search_result() -> None:
         )
 
     assert error.value.errors == ("search_result_required",)
+    assert error.value.stage == "search"
+    assert error.value.retrieved_chunks == ()
+    assert error.value.quiz is None
+    assert error.value.reason is None
+    assert error.value.unsupported_claims == ()
     model_client.generate_quiz.assert_not_called()
     model_client.validate_grounding.assert_not_called()
 
@@ -206,6 +331,10 @@ def test_reject_generated_question_type_different_from_request() -> None:
         )
 
     assert "question_type_mismatch" in error.value.errors
+    assert error.value.stage == "generation_validation"
+    assert len(error.value.retrieved_chunks) == 5
+    assert error.value.quiz is not None
+    assert error.value.grounding_validation is None
     model_client.validate_grounding.assert_not_called()
 
 
@@ -279,6 +408,11 @@ def test_reject_code_validation_failure_before_grounding(
         )
 
     assert expected_error in error.value.errors
+    assert error.value.stage == "generation_validation"
+    assert len(error.value.retrieved_chunks) == 5
+    assert error.value.quiz == quiz
+    assert error.value.reason is None
+    assert error.value.unsupported_claims == ()
     model_client.validate_grounding.assert_not_called()
 
 
@@ -292,4 +426,81 @@ def test_reject_unsupported_grounding_result() -> None:
         )
 
     assert error.value.errors == ("grounding_not_supported",)
+    assert error.value.stage == "grounding_validation"
+    assert len(error.value.retrieved_chunks) == 5
+    assert error.value.quiz == _quiz()
+    assert error.value.reason == "검색 근거가 부족합니다."
+    assert error.value.unsupported_claims == ("근거 없는 주장",)
+    assert error.value.grounding_validation == GroundingValidation(
+        supported=False,
+        reason="검색 근거가 부족합니다.",
+        unsupported_claims=["근거 없는 주장"],
+    )
     model_client.validate_grounding.assert_called_once()
+
+
+def test_preserve_diagnostics_for_generated_content_expansion() -> None:
+    expanded_claim = "요구불 예금은 항상 연 10% 이자를 지급한다."
+    quiz = _quiz(explanation=expanded_claim)
+    service, model_client, _ = _service(quiz=quiz)
+    grounding_validation = GroundingValidation(
+        supported=False,
+        reason="해설의 이자율은 검색 근거에 없는 내용이다.",
+        unsupported_claims=[expanded_claim],
+    )
+    model_client.validate_grounding.return_value = GroundingModelResult(
+        validation=grounding_validation,
+        input_tokens=40,
+        output_tokens=20,
+    )
+
+    with pytest.raises(QuizGenerationValidationError) as error:
+        service.generate(
+            question_type=QuestionType.SINGLE_CHOICE,
+            topic="예금",
+        )
+
+    retrieved_text = " ".join(chunk.content for chunk in error.value.retrieved_chunks)
+    assert expanded_claim not in retrieved_text
+    assert error.value.stage == "grounding_validation"
+    assert error.value.reason == grounding_validation.reason
+    assert error.value.unsupported_claims == (expanded_claim,)
+
+
+def test_preserve_actual_overstrict_grounding_failure_fixture(
+    actual_grounding_failure_case: tuple[
+        list[DocumentChunk],
+        Quiz,
+        GroundingValidation,
+    ],
+) -> None:
+    chunks, quiz, grounding_validation = actual_grounding_failure_case
+    service, model_client, _ = _service(quiz=quiz, chunks=chunks)
+    model_client.validate_grounding.return_value = GroundingModelResult(
+        validation=grounding_validation,
+        input_tokens=0,
+        output_tokens=0,
+    )
+
+    with pytest.raises(QuizGenerationValidationError) as error:
+        service.generate(
+            question_type=QuestionType.SINGLE_CHOICE,
+            topic="예금의 특징",
+        )
+
+    cited_chunk = chunks[0]
+    assert quiz.explanation in cited_chunk.content
+    assert quiz.citations[0].evidence_text in cited_chunk.content
+    assert quiz.correct_answer.option_id == "1"
+    assert grounding_validation.unsupported_claims == [
+        option.text for option in quiz.options[1:]
+    ]
+    assert error.value.errors == ("grounding_not_supported",)
+    assert error.value.stage == "grounding_validation"
+    assert error.value.retrieved_chunks == tuple(chunks)
+    assert error.value.quiz == quiz
+    assert error.value.grounding_validation == grounding_validation
+    assert error.value.reason == grounding_validation.reason
+    assert error.value.unsupported_claims == tuple(
+        grounding_validation.unsupported_claims
+    )

@@ -8,6 +8,7 @@ from app.application.quiz_generation import QuizGenerationValidationError
 from app.core.config import Settings
 from app.domain.chunk import DocumentChunk
 from app.domain.quiz import (
+    GroundingValidation,
     QuestionType,
     Quiz,
     QuizExecution,
@@ -233,7 +234,15 @@ def test_print_validation_error_and_return_failure(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     generate = Mock(
-        side_effect=QuizGenerationValidationError(["grounding_not_supported"])
+        side_effect=QuizGenerationValidationError(
+            ["grounding_not_supported"],
+            stage="grounding_validation",
+            grounding_validation=GroundingValidation(
+                supported=False,
+                reason="선택지 2번의 금리 설명을 근거에서 확인할 수 없다.",
+                unsupported_claims=["선택지 2번의 금리 설명"],
+            ),
+        )
     )
     monkeypatch.setattr(quiz_mvp, "generate_quiz_mvp", generate)
 
@@ -249,4 +258,11 @@ def test_print_validation_error_and_return_failure(
     captured = capsys.readouterr()
     assert exit_code == 1
     assert captured.out == ""
-    assert json.loads(captured.err) == {"errors": ["grounding_not_supported"]}
+    assert json.loads(captured.err) == {
+        "errors": ["grounding_not_supported"],
+        "diagnostics": {
+            "stage": "grounding_validation",
+            "reason": "선택지 2번의 금리 설명을 근거에서 확인할 수 없다.",
+            "unsupported_claims": ["선택지 2번의 금리 설명"],
+        },
+    }
