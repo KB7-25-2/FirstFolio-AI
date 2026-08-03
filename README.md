@@ -124,6 +124,7 @@ AI 배치 생성 계획 또는 향후 Spring 사용자 요청
 → FAISS 인덱스 S3 백업·복구 완료
 → 근거 기반 퀴즈 생성 MVP
 → JSON·정답·해설·출처 검증
+→ 로컬 단건 퀴즈 생성 검수 API
 → 배치 Dry Run·완전 동일 문제 중복 검사
 → batch_id·item_id·JSONL 결과
 → 최소 품질 검수 화면
@@ -519,8 +520,59 @@ docker compose exec -T ai-api python -m app.quiz_mvp \
 
 이 명령은 실제 OpenAI API 비용이 발생하므로 일반 Pytest와 CI에서는
 실행하지 않습니다. 자동 테스트는 OpenAI 호출을 Mock으로 대체합니다.
-최종 검증에서 Pytest 249개가 통과했고 7개가 스킵됐으며, Ruff
+최종 검증에서 Pytest 262개가 통과했고 7개가 스킵됐으며, Ruff
 코드·형식 검사도 통과했습니다.
+
+### 로컬 퀴즈 생성 검수 API
+
+기존 단건 퀴즈 생성 MVP를 Postman에서 확인할 수 있도록 로컬
+개발·검수용 API를 제공합니다. 이 API는 기존 `QuizGenerationService`를
+그대로 호출하며 생성 결과를 AI DB에 저장하지 않습니다.
+
+이 경로는 `APP_ENV=local`일 때만 FastAPI에 등록됩니다. Spring이
+정기 배치를 실행하는 운영 API가 아니며 Frontend 사용자 기능에
+노출하지 않습니다.
+
+```text
+POST http://localhost:8000/api/v1/dev/quiz-generations
+Content-Type: application/json
+```
+
+요청 예시:
+
+```json
+{
+  "question_type": "TRUE_FALSE",
+  "topic": "요구불 예금의 특징"
+}
+```
+
+`question_type`은 `TRUE_FALSE`, `SINGLE_CHOICE`, `SCENARIO`만 허용합니다.
+`topic`은 하이브리드 검색과 문제 생성에 사용할 빈 값이 아닌 주제입니다.
+정상 응답은 기존 `QuizGenerationResult`의 `quiz`, `sources`, `validation`,
+`execution` 구조를 그대로 사용합니다.
+
+| 결과 | HTTP 상태 | 식별 방법 |
+|---|---:|---|
+| 정상 생성 | `200` | `QuizGenerationResult` JSON |
+| 잘못된 요청 | `422` | FastAPI `detail` |
+| 검색 결과 없음 | `404` | `stage`가 `search` |
+| 생성 규칙·출처·근거 검증 실패 | `422` | `stage`가 `generation_validation` |
+| Grounding 실패 | `422` | `stage`가 `grounding_validation` |
+
+검증 실패 응답 예시:
+
+```json
+{
+  "stage": "grounding_validation",
+  "errors": ["grounding_not_supported"],
+  "reason": "검색 근거로 해설을 뒷받침할 수 없습니다.",
+  "unsupported_claims": ["검색 근거에 없는 주장"]
+}
+```
+
+실제 Postman 호출은 로컬 MySQL 청크, FAISS 인덱스와 OpenAI API를
+사용하므로 자동 테스트와 분리해 수동으로 실행합니다.
 
 ## 테스트 범위
 
@@ -573,12 +625,13 @@ docker compose exec -T ai-api python -m app.quiz_mvp \
 - `gpt-4o-mini` 구조화 응답, 타임아웃·재시도와 토큰 사용량 추출
 - 검색·생성 규칙·근거검증 실패 차단과 CLI 진단 JSON
 - MySQL·BM25·FAISS·OpenAI를 연결한 퀴즈 생성 MVP 실행 흐름
+- 로컬 퀴즈 생성 검수 API의 세 문제 유형 요청·응답
+- 검수 API의 잘못된 요청, 검색 결과 없음과 단계별 검증 실패
 
 ### 향후 테스트 범위
 
 - 문서 전처리
 - 문서 유형별 청킹
-- FastAPI 요청·응답 형식
 - Spring 서버 연동 계약
 - 외부 API 실패 및 타임아웃
 
@@ -786,6 +839,7 @@ FastAPI 기본 서버 완료
 → FAISS 인덱스 S3 백업·복구 완료
 → 근거 기반 퀴즈 생성 MVP 완료
 → JSON·정답·해설·출처 검증 완료
+→ 로컬 단건 퀴즈 생성 검수 API
 → 기존 단건 생성 서비스를 재사용한 배치 Dry Run
 → 배치 내부 완전 동일 문제 중복 검사
 → `batch_id`·`item_id` 부여
