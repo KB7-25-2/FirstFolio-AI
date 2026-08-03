@@ -53,6 +53,97 @@ def test_load_embedding_model_from_environment(
     assert settings.embedding_model == "custom-embedding-model"
 
 
+def test_use_default_generation_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GENERATION_MODEL", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.generation_model == "gpt-4o-mini"
+
+
+def test_load_generation_model_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GENERATION_MODEL", "custom-generation-model")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.generation_model == "custom-generation-model"
+
+
+def test_use_default_openai_request_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("OPENAI_MAX_RETRIES", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.openai_timeout_seconds == 30.0
+    assert settings.openai_max_retries == 2
+
+
+def test_load_openai_request_settings_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_TIMEOUT_SECONDS", "45.5")
+    monkeypatch.setenv("OPENAI_MAX_RETRIES", "3")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.openai_timeout_seconds == 45.5
+    assert settings.openai_max_retries == 3
+
+
+@pytest.mark.parametrize(
+    ("environment_name", "invalid_value"),
+    [
+        ("OPENAI_TIMEOUT_SECONDS", "0"),
+        ("OPENAI_TIMEOUT_SECONDS", "-1"),
+        ("OPENAI_MAX_RETRIES", "-1"),
+    ],
+)
+def test_reject_invalid_openai_request_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    environment_name: str,
+    invalid_value: str,
+) -> None:
+    monkeypatch.setenv(environment_name, invalid_value)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_use_default_faiss_file_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("FAISS_INDEX_PATH", raising=False)
+    monkeypatch.delenv("FAISS_MAPPING_PATH", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.faiss_index_path.as_posix() == (
+        "data/local/evaluation/financial_textbook.faiss"
+    )
+    assert settings.faiss_mapping_path.as_posix() == (
+        "data/local/evaluation/financial_textbook_mysql_chunk_keys.json"
+    )
+
+
+def test_load_faiss_file_paths_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FAISS_INDEX_PATH", "/tmp/custom.faiss")
+    monkeypatch.setenv("FAISS_MAPPING_PATH", "/tmp/custom-mapping.json")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.faiss_index_path.as_posix() == "/tmp/custom.faiss"
+    assert settings.faiss_mapping_path.as_posix() == "/tmp/custom-mapping.json"
+
+
 def test_use_default_hybrid_search_weights(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

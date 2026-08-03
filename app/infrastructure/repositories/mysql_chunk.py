@@ -158,7 +158,10 @@ class MySQLChunkRepository:
                         COALESCE(
                             documents.source_url,
                             documents.original_filename
-                        ) AS source
+                        ) AS source,
+                        chunks.heading,
+                        documents.source_url,
+                        documents.published_at
                     FROM AI_DOCUMENT_CHUNKS AS chunks
                     INNER JOIN AI_DOCUMENTS AS documents
                         ON documents.document_id = chunks.document_id
@@ -200,7 +203,10 @@ class MySQLChunkRepository:
                         COALESCE(
                             documents.source_url,
                             documents.original_filename
-                        ) AS source
+                        ) AS source,
+                        chunks.heading,
+                        documents.source_url,
+                        documents.published_at
                     FROM AI_DOCUMENT_CHUNKS AS chunks
                     INNER JOIN AI_DOCUMENTS AS documents
                         ON documents.document_id = chunks.document_id
@@ -278,4 +284,7 @@ class MySQLChunkRepository:
             content=str(row[3]),
             title=str(row[4]),
             source=str(row[5]),
+            heading=None if row[6] is None else str(row[6]),
+            source_url=None if row[7] is None else str(row[7]),
+            published_at=row[8],
         )

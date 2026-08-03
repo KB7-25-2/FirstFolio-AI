@@ -15,13 +15,21 @@ def test_delegate_embedding_requests_to_langchain(
         [0.4, 0.5, 0.6],
     ]
     langchain_client.embed_query.return_value = [0.7, 0.8, 0.9]
-    created_models: list[str] = []
+    created_client_options: list[dict[str, object]] = []
 
     def create_embedding_client(
         *,
         model: str,
+        timeout: float,
+        max_retries: int,
     ) -> Mock:
-        created_models.append(model)
+        created_client_options.append(
+            {
+                "model": model,
+                "timeout": timeout,
+                "max_retries": max_retries,
+            }
+        )
         return langchain_client
 
     monkeypatch.setattr(
@@ -32,6 +40,8 @@ def test_delegate_embedding_requests_to_langchain(
 
     client = OpenAIEmbeddingClient(
         model="text-embedding-3-small",
+        timeout_seconds=45.0,
+        max_retries=3,
     )
     texts = [
         "예금은 금융상품이다.",
@@ -41,7 +51,13 @@ def test_delegate_embedding_requests_to_langchain(
     document_vectors = client.embed_documents(texts)
     query_vector = client.embed_query("예금 금리")
 
-    assert created_models == ["text-embedding-3-small"]
+    assert created_client_options == [
+        {
+            "model": "text-embedding-3-small",
+            "timeout": 45.0,
+            "max_retries": 3,
+        }
+    ]
     assert document_vectors == [
         [0.1, 0.2, 0.3],
         [0.4, 0.5, 0.6],
