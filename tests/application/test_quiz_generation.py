@@ -504,3 +504,67 @@ def test_preserve_actual_overstrict_grounding_failure_fixture(
     assert error.value.unsupported_claims == tuple(
         grounding_validation.unsupported_claims
     )
+
+
+def test_accept_actual_fixture_when_only_incorrect_distractors_lack_support(
+    actual_grounding_failure_case: tuple[
+        list[DocumentChunk],
+        Quiz,
+        GroundingValidation,
+    ],
+) -> None:
+    chunks, quiz, _ = actual_grounding_failure_case
+    service, model_client, _ = _service(quiz=quiz, chunks=chunks)
+    model_client.validate_grounding.return_value = GroundingModelResult(
+        validation=GroundingValidation(
+            supported=True,
+            reason=(
+                "질문, 정답 선택지와 해설은 근거로 뒷받침되고 나머지 선택지는 오답이다."
+            ),
+            unsupported_claims=[],
+        ),
+        input_tokens=0,
+        output_tokens=0,
+    )
+
+    result = service.generate(
+        question_type=QuestionType.SINGLE_CHOICE,
+        topic="예금의 특징",
+    )
+
+    assert result.validation.grounded is True
+    assert result.quiz == quiz
+    grounding_prompt = model_client.validate_grounding.call_args.args[0]
+    assert "오답 선택지가 검색 근거에서 지원되지 않는다는" in grounding_prompt
+
+
+def test_reject_when_another_option_can_also_be_correct() -> None:
+    quiz = _quiz(
+        options=[
+            {"option_id": "1", "text": "예금은 금융기관에 돈을 맡기는 상품이다."},
+            {"option_id": "2", "text": "예금은 은행에 돈을 맡기는 금융상품이다."},
+            {"option_id": "3", "text": "예금은 주식 종목이다."},
+            {"option_id": "4", "text": "예금은 실물 자산이다."},
+        ]
+    )
+    service, model_client, _ = _service(quiz=quiz)
+    grounding_validation = GroundingValidation(
+        supported=False,
+        reason="선택지 1과 2가 모두 근거상 정답이 될 수 있다.",
+        unsupported_claims=[],
+    )
+    model_client.validate_grounding.return_value = GroundingModelResult(
+        validation=grounding_validation,
+        input_tokens=0,
+        output_tokens=0,
+    )
+
+    with pytest.raises(QuizGenerationValidationError) as error:
+        service.generate(
+            question_type=QuestionType.SINGLE_CHOICE,
+            topic="예금",
+        )
+
+    assert error.value.errors == ("grounding_not_supported",)
+    assert error.value.reason == grounding_validation.reason
+    assert error.value.unsupported_claims == ()
