@@ -13,7 +13,9 @@ _USAGE_TYPE_BY_QUESTION_TYPE = {
 
 _TYPE_RULES = {
     QuestionType.TRUE_FALSE: (
-        "options는 option_id와 text가 각각 O, X인 정확히 두 개로 구성하고 "
+        "options의 option_id와 text는 각각 O, X만 사용하고 반드시 "
+        '[{"option_id":"O","text":"O"},{"option_id":"X","text":"X"}]'
+        "와 완전히 동일하게 구성하며 text에 설명을 추가하지 않고 "
         "scenario_json은 null로 반환한다."
     ),
     QuestionType.SINGLE_CHOICE: (

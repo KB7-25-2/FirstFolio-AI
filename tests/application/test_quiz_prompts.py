@@ -52,7 +52,7 @@ def _quiz() -> Quiz:
 @pytest.mark.parametrize(
     ("question_type", "usage_type", "expected_rule"),
     [
-        (QuestionType.TRUE_FALSE, "SUB_CHAPTER", "각각 O, X"),
+        (QuestionType.TRUE_FALSE, "SUB_CHAPTER", '"option_id":"O","text":"O"'),
         (QuestionType.SINGLE_CHOICE, "SUB_CHAPTER", "문자열 1, 2, 3, 4"),
         (QuestionType.SCENARIO, "MAIN_CHAPTER", "character"),
     ],
