@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.application.quiz_prompts import (
@@ -173,3 +175,29 @@ def test_reject_empty_grounding_evidence() -> None:
             quiz=_quiz(),
             retrieved_chunks=[],
         )
+
+
+def test_separate_correct_answer_and_distractors_in_grounding_prompt() -> None:
+    prompt = build_grounding_validation_prompt(
+        quiz=_quiz(),
+        retrieved_chunks=_chunks(),
+    )
+    grounding_target_json = prompt.split("검증 대상:\n", maxsplit=1)[1].split(
+        "\n\n검색 근거:",
+        maxsplit=1,
+    )[0]
+    grounding_target = json.loads(grounding_target_json)
+
+    assert grounding_target["correct_answer_option"] == {
+        "option_id": "1",
+        "text": "선택지 1",
+    }
+    assert grounding_target["distractor_options"] == [
+        {"option_id": "2", "text": "선택지 2"},
+        {"option_id": "3", "text": "선택지 3"},
+        {"option_id": "4", "text": "선택지 4"},
+    ]
+    assert "options" not in grounding_target
+    assert "distractor_options의 문장은 unsupported_claims에 포함하지 않는다" in prompt
+    assert "근거와 모순되거나 근거에서 지원되지 않는 오답은 정상적인 오답" in prompt
+    assert "reason은 한국어로 작성한다" in prompt

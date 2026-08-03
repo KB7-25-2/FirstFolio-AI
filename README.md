@@ -515,12 +515,16 @@ docker compose exec -T ai-api python -m app.quiz_mvp \
 
 세 유형 모두 JSON 구조, 선택지, 단일 정답, 해설, Top 5 내
 출처, 원문 근거 문장과 최종 근거검증을 통과했습니다.
+근거검증 입력은 정답 선택지와 오답 선택지를 분리합니다. 질문·정답·해설의
+핵심 주장은 검색 근거의 지원 여부를 확인하고, 오답 선택지는 근거에서
+지원되지 않는다는 이유로 실패하지 않으며 다른 정답이 될 수 있는지만
+확인합니다.
 근거가 부족하면 `grounding_not_supported`로 계속 차단하며,
 실패 시 CLI에 검증 단계, `reason`, `unsupported_claims`를 출력합니다.
 
 이 명령은 실제 OpenAI API 비용이 발생하므로 일반 Pytest와 CI에서는
 실행하지 않습니다. 자동 테스트는 OpenAI 호출을 Mock으로 대체합니다.
-최종 검증에서 Pytest 262개가 통과했고 7개가 스킵됐으며, Ruff
+최종 검증에서 Pytest 263개가 통과했고 7개가 스킵됐으며, Ruff
 코드·형식 검사도 통과했습니다.
 
 ### 로컬 퀴즈 생성 검수 API
@@ -624,6 +628,7 @@ Content-Type: application/json
 - Top 5 검색 근거 프롬프트와 `chunk_key`·원문 부분 문자열 검증
 - `gpt-4o-mini` 구조화 응답, 타임아웃·재시도와 토큰 사용량 추출
 - 검색·생성 규칙·근거검증 실패 차단과 CLI 진단 JSON
+- 근거검증 프롬프트의 정답·오답 선택지 분리와 오답 근거 오탐 방지
 - MySQL·BM25·FAISS·OpenAI를 연결한 퀴즈 생성 MVP 실행 흐름
 - 로컬 퀴즈 생성 검수 API의 세 문제 유형 요청·응답
 - 검수 API의 잘못된 요청, 검색 결과 없음과 단계별 검증 실패
