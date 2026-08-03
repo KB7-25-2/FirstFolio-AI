@@ -200,6 +200,7 @@ firstfolio-ai/
 │   ├── api/                    # FastAPI 라우터
 │   ├── application/
 │   │   ├── document_registration.py # S3·MySQL 문서 등록·교체
+│   │   ├── quiz_batch.py      # 순차 퀴즈 생성 배치·중복·실패 처리
 │   │   ├── quiz_generation.py # 검색·생성·근거검증 퀴즈 파이프라인
 │   │   ├── quiz_prompts.py    # 퀴즈 생성·근거검증 프롬프트
 │   │   ├── quiz_sources.py    # `chunk_key` 기반 출처 구성
@@ -240,6 +241,7 @@ firstfolio-ai/
 │   │   └── tokenizers/
 │   │       └── kiwi.py         # Kiwi 한국어 토크나이저
 │   ├── main.py                 # FastAPI 실행 진입점
+│   ├── quiz_batch_dry_run.py   # 로컬 배치 JSON 입력·JSONL 출력 CLI
 │   └── quiz_mvp.py             # 퀴즈 생성 MVP CLI 진입점
 ├── db/init/
 │   └── 001_create_document_tables.sql # AI 문서·청크 DDL
@@ -578,6 +580,92 @@ Content-Type: application/json
 실제 Postman 호출은 로컬 MySQL 청크, FAISS 인덱스와 OpenAI API를
 사용하므로 자동 테스트와 분리해 수동으로 실행합니다.
 
+### 퀴즈 생성 배치 Dry Run
+
+배치 Dry Run은 단건 검수 API를 HTTP로 호출하지 않고 기존
+`QuizGenerationService.generate()`를 순차적으로 직접 호출합니다. 한 항목의
+실패나 중복은 다음 항목을 중단하지 않으며 자동 재시도와 병렬 처리는 하지
+않습니다.
+
+입력은 다음 JSON 구조를 사용합니다. `count`는 생략하면 `1`이며 1 이상의
+정수만 허용합니다.
+
+```json
+{
+  "items": [
+    {
+      "question_type": "TRUE_FALSE",
+      "topic": "요구불 예금의 특징",
+      "count": 2
+    },
+    {
+      "question_type": "SINGLE_CHOICE",
+      "topic": "예금의 특징"
+    },
+    {
+      "question_type": "SCENARIO",
+      "topic": "정기 예금 선택 상황"
+    }
+  ]
+}
+```
+
+입력 파일을 Git에서 제외되는 `data/local/` 아래에 준비한 뒤 실행합니다.
+기존 컨테이너가 실행 중이라면 새 쓰기 전용 하위 마운트를 적용하기 위해 먼저
+`docker compose up -d --force-recreate ai-api`로 AI 컨테이너를 재생성합니다.
+
+```bash
+docker compose exec -T ai-api python -m app.quiz_batch_dry_run \
+  --input data/local/quiz-generation-batch-input.json
+```
+
+기본 결과 경로는 다음과 같습니다. 원문이 있는 `data/local`은 읽기 전용으로
+유지하고 이 결과 디렉터리만 Docker 컨테이너에 쓰기 가능하게 연결합니다.
+
+```text
+data/local/quiz-generation-batches/{batch_id}.jsonl
+```
+
+다른 로컬 JSONL 경로가 필요하면 `--output`을 지정합니다.
+기존 파일은 덮어쓰지 않으므로 이미 존재하는 경로를 지정하면 배치를 시작하기
+전에 입력 오류로 종료합니다.
+
+```bash
+docker compose exec -T ai-api python -m app.quiz_batch_dry_run \
+  --input data/local/quiz-generation-batch-input.json \
+  --output data/local/quiz-generation-batches/manual-review.jsonl
+```
+
+각 JSONL 줄은 같은 최상위 필드를 사용합니다.
+
+| 필드 | 설명 |
+|---|---|
+| `batch_id` | 한 번의 실행에 부여한 UUIDv4 문자열 |
+| `item_id` | 개별 생성 시도에 부여한 UUIDv4 문자열 |
+| `status` | `SUCCEEDED`, `FAILED`, `DUPLICATE` 중 하나 |
+| `input` | 처리한 `question_type`과 공백을 정리한 `topic` |
+| `result` | 성공한 항목의 기존 `QuizGenerationResult`, 그 외에는 `null` |
+| `error` | 실패·중복 단계와 오류 코드·사유·지원되지 않는 주장 |
+| `duplicate` | 중복 원본 `item_id`와 생성된 질문, 그 외에는 `null` |
+
+배치 내부 중복은 성공한 선행 문제의 질문과 새 질문을
+`normalize_quiz_prompt()`로 정규화해 비교합니다. 공백, 줄바꿈과 문장부호만
+다른 질문도 `DUPLICATE`로 기록하며 중복 결과를 정상 퀴즈로 저장하지
+않습니다. 과거 배치나 Spring DB, 임베딩 유사도는 비교하지 않습니다.
+
+입력 오류 코드는 `unsupported_question_type`, `topic_required`를 사용합니다.
+기존 생성 검증 실패는 `QuizGenerationValidationError`의 `stage`, `errors`,
+`reason`, `unsupported_claims`를 보존합니다. 예상하지 못한 서비스 오류는
+내부 상세정보를 노출하지 않고 `quiz_generation_failed`로 기록합니다.
+
+실행이 끝나면 stdout에 `total`, `succeeded`, `failed`, `duplicates`와
+`output_path` 요약을 출력합니다. JSONL은 로컬 품질 검수용 산출물이며 AI DB나
+Spring 메인 DB의 최종 저장소가 아닙니다.
+
+이 명령은 실제 MySQL 청크, FAISS 인덱스와 OpenAI API를 사용하므로 자동
+테스트와 분리합니다. 자동 테스트와 Ruff·Docker 검증을 완료한 뒤 별도 승인을
+받아 3~5개 항목으로만 최초 실제 검수를 진행합니다.
+
 ## 테스트 범위
 
 ### 현재 테스트
@@ -632,6 +720,11 @@ Content-Type: application/json
 - MySQL·BM25·FAISS·OpenAI를 연결한 퀴즈 생성 MVP 실행 흐름
 - 로컬 퀴즈 생성 검수 API의 세 문제 유형 요청·응답
 - 검수 API의 잘못된 요청, 검색 결과 없음과 단계별 검증 실패
+- 퀴즈 생성 배치의 혼합 유형·수량 확장과 순차 처리
+- 배치 항목별 실패 격리와 성공·실패·중복 요약
+- 공백·줄바꿈·문장부호를 제거한 배치 내부 동일 질문 검사
+- 배치 UUIDv4 식별자와 한 줄당 하나의 JSONL 레코드
+- 빈 배치·잘못된 문제 유형·빈 주제 입력 처리
 
 ### 향후 테스트 범위
 
