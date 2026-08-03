@@ -116,6 +116,34 @@ def test_reject_invalid_openai_request_settings(
         Settings(_env_file=None)
 
 
+def test_use_default_faiss_file_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("FAISS_INDEX_PATH", raising=False)
+    monkeypatch.delenv("FAISS_MAPPING_PATH", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.faiss_index_path.as_posix() == (
+        "data/local/evaluation/financial_textbook.faiss"
+    )
+    assert settings.faiss_mapping_path.as_posix() == (
+        "data/local/evaluation/financial_textbook_mysql_chunk_keys.json"
+    )
+
+
+def test_load_faiss_file_paths_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FAISS_INDEX_PATH", "/tmp/custom.faiss")
+    monkeypatch.setenv("FAISS_MAPPING_PATH", "/tmp/custom-mapping.json")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.faiss_index_path.as_posix() == "/tmp/custom.faiss"
+    assert settings.faiss_mapping_path.as_posix() == "/tmp/custom-mapping.json"
+
+
 def test_use_default_hybrid_search_weights(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
