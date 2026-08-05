@@ -191,7 +191,7 @@ API DTO와 서비스 검증으로 이 규칙을 적용하며 기존 컬럼의 �
 | --- | --- | --- |
 | `batch_id` | 저장 안 함 | 전송 배치 추적용이며 현재 BE 영속화 범위에서 제외 |
 | `item_id` | 저장 안 함 | 응답 항목 연결용이며 현재 BE 영속화 범위에서 제외 |
-| `quiz.citations` | 그대로 저장 안 함 | 메타데이터를 포함한 `source_refs_json`으로 저장 |
+| `quiz.citations` | 별도 필드로 저장 안 함 | 같은 `chunk_key`의 `sources` 메타데이터와 결합해 `source_refs_json`으로 저장 |
 | `validation` | 저장 안 함 | AI 내부 자동 검증 결과 |
 | `execution` | 저장 안 함 | AI 생성 실행 정보 |
 | `execution.model` | 저장 안 함 | AI 운영·로깅 정보 |
@@ -201,6 +201,11 @@ API DTO와 서비스 검증으로 이 규칙을 적용하며 기존 컬럼의 �
 
 AI 내부 생성·검증·실행 정보는 AI 로그와 로컬 JSONL의 책임이다. BE의
 서비스용 퀴즈 원본에 중복해 저장하지 않는다.
+
+`quiz.citations` 자체는 폐기하지 않는다. citation의 `chunk_key`와 검증된
+`evidence_text`를 기준으로 같은 `chunk_key`의 `sources` 메타데이터를 결합해
+`source_refs_json` 항목을 만든다. 따라서 Spring에는 citation 배열과 source
+배열을 각각 전달하지 않고, 두 정보를 합친 `source_refs`만 전달한다.
 
 ## 9. 저장 결과 예시
 
