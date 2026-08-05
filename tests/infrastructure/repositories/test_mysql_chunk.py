@@ -19,6 +19,7 @@ def _settings() -> Settings:
 def _chunk(
     document_id: str = "12",
     sequence: int = 0,
+    heading: str | None = None,
 ) -> DocumentChunk:
     return DocumentChunk(
         document_id=document_id,
@@ -27,6 +28,7 @@ def _chunk(
         content=f"청크 본문 {sequence}",
         title="금융 교과서",
         source="financial_textbook.txt",
+        heading=heading,
     )
 
 
@@ -44,7 +46,10 @@ def test_save_all_commits_chunks(
     connection, cursor = _connection_and_cursor()
     create_connection_mock.return_value = connection
     repository = MySQLChunkRepository(_settings())
-    chunks = [_chunk(sequence=0), _chunk(sequence=1)]
+    chunks = [
+        _chunk(sequence=0, heading="저축과 저축 상품"),
+        _chunk(sequence=1, heading="저축과 저축 상품"),
+    ]
 
     repository.save_all(chunks)
 
@@ -52,9 +57,10 @@ def test_save_all_commits_chunks(
     normalized_sql = " ".join(sql.split())
 
     assert "INSERT INTO AI_DOCUMENT_CHUNKS" in normalized_sql
+    assert "heading" in normalized_sql
     assert rows == [
-        (12, "12:0", 0, "paragraph", "청크 본문 0"),
-        (12, "12:1", 1, "paragraph", "청크 본문 1"),
+        (12, "12:0", 0, "paragraph", "저축과 저축 상품", "청크 본문 0"),
+        (12, "12:1", 1, "paragraph", "저축과 저축 상품", "청크 본문 1"),
     ]
     connection.commit.assert_called_once_with()
     connection.rollback.assert_not_called()
@@ -80,7 +86,10 @@ def test_replace_document_chunks_deletes_and_inserts_in_one_transaction(
     connection, cursor = _connection_and_cursor()
     create_connection_mock.return_value = connection
     repository = MySQLChunkRepository(_settings())
-    chunks = [_chunk(sequence=0), _chunk(sequence=1)]
+    chunks = [
+        _chunk(sequence=0, heading="저축과 저축 상품"),
+        _chunk(sequence=1, heading="저축과 저축 상품"),
+    ]
 
     repository.replace_document_chunks(
         document_id="12",
@@ -95,9 +104,10 @@ def test_replace_document_chunks_deletes_and_inserts_in_one_transaction(
     assert "DELETE FROM AI_DOCUMENT_CHUNKS" in normalized_delete_sql
     assert delete_parameters == (12,)
     assert "INSERT INTO AI_DOCUMENT_CHUNKS" in normalized_insert_sql
+    assert "heading" in normalized_insert_sql
     assert rows == [
-        (12, "12:0", 0, "paragraph", "청크 본문 0"),
-        (12, "12:1", 1, "paragraph", "청크 본문 1"),
+        (12, "12:0", 0, "paragraph", "저축과 저축 상품", "청크 본문 0"),
+        (12, "12:1", 1, "paragraph", "저축과 저축 상품", "청크 본문 1"),
     ]
     connection.commit.assert_called_once_with()
     connection.rollback.assert_not_called()
@@ -162,7 +172,10 @@ def test_replace_chunks_with_shared_connection_does_not_finish_transaction(
     repository.replace_document_chunks_in_transaction(
         connection=connection,
         document_id="12",
-        chunks=[_chunk(sequence=0), _chunk(sequence=1)],
+        chunks=[
+            _chunk(sequence=0, heading="저축과 저축 상품"),
+            _chunk(sequence=1, heading="저축과 저축 상품"),
+        ],
     )
 
     delete_sql, delete_parameters = cursor.execute.call_args.args
@@ -172,8 +185,8 @@ def test_replace_chunks_with_shared_connection_does_not_finish_transaction(
     assert delete_parameters == (12,)
     assert "INSERT INTO AI_DOCUMENT_CHUNKS" in " ".join(insert_sql.split())
     assert rows == [
-        (12, "12:0", 0, "paragraph", "청크 본문 0"),
-        (12, "12:1", 1, "paragraph", "청크 본문 1"),
+        (12, "12:0", 0, "paragraph", "저축과 저축 상품", "청크 본문 0"),
+        (12, "12:1", 1, "paragraph", "저축과 저축 상품", "청크 본문 1"),
     ]
 
     create_connection_mock.assert_not_called()
@@ -289,6 +302,10 @@ def test_find_by_chunk_keys_preserves_requested_order(
     assert [chunk.chunk_key for chunk in chunks] == [
         "12:0",
         "12:1",
+    ]
+    assert [chunk.heading for chunk in chunks] == [
+        None,
+        "저축과 저축 상품",
     ]
     cursor.close.assert_called_once_with()
     connection.close.assert_called_once_with()

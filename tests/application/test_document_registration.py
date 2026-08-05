@@ -25,7 +25,9 @@ def test_register_text_document(
     create_connection_mock: Mock,
 ) -> None:
     upload_mock.return_value = "version-001"
-    download_mock.return_value = ("예금에 대한 설명.\n\n채권에 대한 설명.").encode()
+    download_mock.return_value = (
+        "1) 예금의 의미\n예금에 대한 설명.\n\n채권에 대한 설명."
+    ).encode()
 
     connection = Mock()
     create_connection_mock.return_value = connection
@@ -93,13 +95,53 @@ def test_register_text_document(
         "12:1",
     ]
     assert [chunk.content for chunk in chunks] == [
-        "예금에 대한 설명.",
+        "1) 예금의 의미\n예금에 대한 설명.",
         "채권에 대한 설명.",
+    ]
+    assert [chunk.heading for chunk in chunks] == [
+        "예금의 의미",
+        "예금의 의미",
     ]
     connection.commit.assert_called_once_with()
     connection.rollback.assert_not_called()
     connection.close.assert_called_once_with()
     index_invalidator.assert_called_once_with()
+
+
+@patch("app.application.document_registration.create_mysql_connection")
+@patch("app.application.document_registration.download_text_object")
+@patch("app.application.document_registration.upload_text_object")
+def test_register_non_textbook_without_heading_metadata(
+    upload_mock: Mock,
+    download_mock: Mock,
+    create_connection_mock: Mock,
+) -> None:
+    upload_mock.return_value = "version-001"
+    download_mock.return_value = b"1) numbered report heading\nreport content"
+    connection = Mock()
+    create_connection_mock.return_value = connection
+    document_repository = Mock()
+    document_repository.create_in_transaction.return_value = 12
+    chunk_repository = Mock()
+    pipeline = TextDocumentRegistrationPipeline(
+        settings=_settings(),
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+    )
+
+    pipeline.register(
+        content=b"uploaded content",
+        object_key="documents/report.txt",
+        document_type="report",
+        title="금융 보고서",
+        original_filename="report.txt",
+    )
+
+    replacement_call = chunk_repository.replace_document_chunks_in_transaction.call_args
+    chunks = replacement_call.kwargs["chunks"]
+
+    assert len(chunks) == 1
+    assert chunks[0].heading is None
 
 
 @patch("app.application.document_registration.upload_text_object")
@@ -220,7 +262,9 @@ def test_replace_text_document(
     create_connection_mock: Mock,
 ) -> None:
     upload_mock.return_value = "version-002"
-    download_mock.return_value = ("새 예금 설명.\n\n새 채권 설명.").encode()
+    download_mock.return_value = (
+        "2) 새 예금 단원\n새 예금 설명.\n\n새 채권 설명."
+    ).encode()
     connection = Mock()
     create_connection_mock.return_value = connection
     document_repository = Mock()
@@ -270,6 +314,10 @@ def test_replace_text_document(
     assert [chunk.chunk_key for chunk in replacement_call.kwargs["chunks"]] == [
         "12:0",
         "12:1",
+    ]
+    assert [chunk.heading for chunk in replacement_call.kwargs["chunks"]] == [
+        "새 예금 단원",
+        "새 예금 단원",
     ]
     document_repository.update_storage_in_transaction.assert_called_once_with(
         connection=connection,
