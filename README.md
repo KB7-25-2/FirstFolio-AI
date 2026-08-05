@@ -47,7 +47,7 @@ AI Scheduler
 - LangChain·OpenAI API
 - Kiwi·BM25
 - FAISS
-- MySQL 8.0
+- MySQL
 - Amazon S3
 - Docker Compose
 - Pytest·Ruff
