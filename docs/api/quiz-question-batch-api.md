@@ -73,8 +73,11 @@ Spring 구현 코드는 별도의 `ai` 또는 `internal` 최상위 패키지를 
 | `source_refs` | array | Y | 하나 이상의 근거 출처 |
 
 AI 내부 결과의 `validation`, `execution`, 입력·출력 토큰 수와 처리 시간은
-Spring에 전달하지 않는다. AI 내부 `quiz.citations`도 전송 필드로 그대로
-사용하지 않고, 출처 메타데이터가 포함된 `source_refs`로 전달한다.
+Spring에 전달하지 않는다. AI 내부 `quiz.citations`를 버리는 것은 아니다.
+각 citation을 같은 `chunk_key`의 `sources` 항목과 결합해 `source_refs`로
+변환한다. `evidence_text`는 citation의 검증된 근거 문장을 사용하고,
+`document_id`, `title`, `heading`, `source_url`, `published_at`은 일치하는
+source의 메타데이터를 사용한다.
 
 ### 4.4 `scenario_json` 필드
 
@@ -111,6 +114,14 @@ Spring에 전달하지 않는다. AI 내부 `quiz.citations`도 전송 필드로
 
 `reference_at`은 현재 교과서 MVP 계약에서 제외한다. 뉴스·법령·시장 자료의
 기준 시점은 해당 콘텐츠를 연동할 때 별도로 확정한다.
+
+`source_refs` 변환 규칙은 다음과 같다.
+
+1. `quiz.citations`의 각 항목을 `chunk_key`로 조회한다.
+2. 같은 `chunk_key`를 가진 `sources` 항목의 문서 메타데이터를 결합한다.
+3. citation의 `evidence_text`를 최종 근거 문장으로 사용한다.
+4. 같은 `chunk_key`가 반복되면 하나의 `source_refs` 항목으로 정리한다.
+5. citation과 일치하는 source를 찾지 못하면 해당 문항을 전송하지 않는다.
 
 ## 5. 문제 유형별 규칙
 
