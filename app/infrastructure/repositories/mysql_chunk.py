@@ -34,9 +34,10 @@ class MySQLChunkRepository:
                         chunk_key,
                         chunk_order,
                         chunk_type,
+                        heading,
                         content
                     )
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
                     rows,
                 )
@@ -93,7 +94,7 @@ class MySQLChunkRepository:
         self,
         document_id: str,
         chunks: Sequence[DocumentChunk],
-    ) -> tuple[int, list[tuple[int, str, int, str, str]]]:
+    ) -> tuple[int, list[tuple[int, str, int, str, str | None, str]]]:
         numeric_document_id = self._parse_document_id(document_id)
 
         for chunk in chunks:
@@ -110,7 +111,7 @@ class MySQLChunkRepository:
     def _execute_chunk_replacement(
         connection: MySQLConnectionAbstract,
         document_id: int,
-        rows: Sequence[tuple[int, str, int, str, str]],
+        rows: Sequence[tuple[int, str, int, str, str | None, str]],
     ) -> None:
         cursor = connection.cursor()
 
@@ -131,9 +132,10 @@ class MySQLChunkRepository:
                         chunk_key,
                         chunk_order,
                         chunk_type,
+                        heading,
                         content
                     )
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
                     rows,
                 )
@@ -237,8 +239,8 @@ class MySQLChunkRepository:
     def _build_insert_rows(
         self,
         chunks: Sequence[DocumentChunk],
-    ) -> list[tuple[int, str, int, str, str]]:
-        rows: list[tuple[int, str, int, str, str]] = []
+    ) -> list[tuple[int, str, int, str, str | None, str]]:
+        rows: list[tuple[int, str, int, str, str | None, str]] = []
 
         for chunk in chunks:
             document_id = self._parse_document_id(chunk.document_id)
@@ -255,6 +257,7 @@ class MySQLChunkRepository:
                     chunk.chunk_key,
                     chunk.sequence,
                     "paragraph",
+                    chunk.heading,
                     chunk.content,
                 )
             )

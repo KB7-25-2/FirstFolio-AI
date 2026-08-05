@@ -84,7 +84,10 @@ class TextDocumentRegistrationPipeline:
                 title=title,
                 source=source_url or original_filename,
             )
-            chunks = self._chunker.chunk(source_document)
+            chunks = self._chunker.chunk(
+                source_document,
+                extract_textbook_headings=document_type == "textbook",
+            )
 
             self._chunk_repository.replace_document_chunks_in_transaction(
                 connection=connection,
@@ -138,7 +141,10 @@ class TextDocumentRegistrationPipeline:
                 source=current_document.source_url
                 or current_document.original_filename,
             )
-            chunks = self._chunker.chunk(source_document)
+            chunks = self._chunker.chunk(
+                source_document,
+                extract_textbook_headings=current_document.document_type == "textbook",
+            )
 
             self._chunk_repository.replace_document_chunks_in_transaction(
                 connection=connection,
