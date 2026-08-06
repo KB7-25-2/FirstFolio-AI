@@ -17,6 +17,33 @@ def _settings() -> Settings:
     )
 
 
+def _news_content(article_id: str = "article-001") -> bytes:
+    paragraphs = (
+        "\n".join(
+            (
+                "\ubb38\uc11c\uc720\ud615: \ub274\uc2a4",
+                "\uc81c\ubaa9: Registered news",
+                "\uc5b8\ub860\uc0ac: First Finance",
+                "\uce74\ud14c\uace0\ub9ac: Finance > Banking",
+                "\uc791\uc131\uc790: Reporter Kim",
+                "\ubc1c\ud589\uc77c: 2026-08-05 10:57",
+                "\uae30\uc900\uc2dc\uc810: 2026-07-31",
+                "\uc218\uc9d1\uc77c: 2026-08-06",
+                f"\uae30\uc0ac ID: {article_id}",
+                "\uc6d0\ubb38 URL: https://example.com/news/article-001",
+                "\ubcf8\ubb38 \ud615\ud0dc: Original-based summary",
+            )
+        ),
+        "\ud575\uc2ec \ub0b4\uc6a9",
+        "Rates increased by 12.5%.",
+        "\ud0a4\uc6cc\ub4dc",
+        "rates, deposits",
+        "\ucd9c\ucc98 \uc720\uc758\uc0ac\ud56d",
+        "Check the original source.",
+    )
+    return "\n\n".join(paragraphs).encode()
+
+
 @patch("app.application.document_registration.create_mysql_connection")
 @patch("app.application.document_registration.download_text_object")
 @patch("app.application.document_registration.upload_text_object")
@@ -310,6 +337,45 @@ def test_register_selects_chunker_by_document_type(
 @patch("app.application.document_registration.create_mysql_connection")
 @patch("app.application.document_registration.download_text_object")
 @patch("app.application.document_registration.upload_text_object")
+def test_register_news_preserves_parsed_chunk_metadata(
+    upload_mock: Mock,
+    download_mock: Mock,
+    create_connection_mock: Mock,
+) -> None:
+    upload_mock.return_value = "version-001"
+    download_mock.return_value = _news_content()
+    connection = Mock()
+    create_connection_mock.return_value = connection
+    document_repository = Mock()
+    document_repository.create_in_transaction.return_value = 12
+    chunk_repository = Mock()
+    pipeline = TextDocumentRegistrationPipeline(
+        settings=_settings(),
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+    )
+
+    _, chunk_count = pipeline.register(
+        content=_news_content(),
+        object_key="documents/news.txt",
+        document_type="news",
+        title="Registered news",
+        original_filename="news.txt",
+    )
+
+    chunks = chunk_repository.replace_document_chunks_in_transaction.call_args.kwargs[
+        "chunks"
+    ]
+    assert chunk_count == 1
+    assert chunks[0].chunk_key == "12:0"
+    assert chunks[0].metadata["article_id"] == "article-001"
+    assert chunks[0].metadata["source_url"] == ("https://example.com/news/article-001")
+    assert chunks[0].metadata["reference_at"] == "2026-07-31"
+
+
+@patch("app.application.document_registration.create_mysql_connection")
+@patch("app.application.document_registration.download_text_object")
+@patch("app.application.document_registration.upload_text_object")
 def test_replace_selects_chunker_from_stored_document_type(
     upload_mock: Mock,
     download_mock: Mock,
@@ -358,6 +424,48 @@ def test_replace_selects_chunker_from_stored_document_type(
     document_chunker.chunk.assert_called_once()
     replacement_call = chunk_repository.replace_document_chunks_in_transaction.call_args
     assert replacement_call.kwargs["chunks"] == [selected_chunk]
+
+
+@patch("app.application.document_registration.create_mysql_connection")
+@patch("app.application.document_registration.download_text_object")
+@patch("app.application.document_registration.upload_text_object")
+def test_replace_news_preserves_parsed_chunk_metadata(
+    upload_mock: Mock,
+    download_mock: Mock,
+    create_connection_mock: Mock,
+) -> None:
+    upload_mock.return_value = "version-002"
+    download_mock.return_value = _news_content(article_id="article-002")
+    connection = Mock()
+    create_connection_mock.return_value = connection
+    document_repository = Mock()
+    document_repository.find_by_id.return_value = DocumentMetadata(
+        document_id=12,
+        document_type="news",
+        category="finance",
+        title="Registered news",
+        original_filename="news.txt",
+        content_type="text/plain",
+        s3_object_key="documents/news.txt",
+        s3_version_id="version-001",
+        status="ready",
+    )
+    chunk_repository = Mock()
+    pipeline = TextDocumentRegistrationPipeline(
+        settings=_settings(),
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+    )
+
+    chunk_count = pipeline.replace(document_id=12, content=_news_content())
+
+    chunks = chunk_repository.replace_document_chunks_in_transaction.call_args.kwargs[
+        "chunks"
+    ]
+    assert chunk_count == 1
+    assert chunks[0].chunk_key == "12:0"
+    assert chunks[0].metadata["article_id"] == "article-002"
+    document_repository.update_storage_in_transaction.assert_called_once()
 
 
 @patch("app.application.document_registration.create_mysql_connection")

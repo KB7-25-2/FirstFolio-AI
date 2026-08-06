@@ -488,3 +488,44 @@ def test_find_by_chunk_keys_restores_chunk_metadata(
         "chapter_heading": "Savings",
         "section_heading": "Income",
     }
+
+
+@patch("app.infrastructure.repositories.mysql_chunk.create_mysql_connection")
+def test_find_by_chunk_keys_restores_all_news_metadata(
+    create_connection_mock: Mock,
+) -> None:
+    connection, cursor = _connection_and_cursor()
+    metadata = {
+        "document_type": "\ub274\uc2a4",
+        "title": "Rates rise 12.5%",
+        "publisher": "First Finance",
+        "category": "Finance > Banking",
+        "author": "Reporter Kim",
+        "published_at": "2026-08-05 10:57",
+        "reference_at": "2026-07-31",
+        "collected_at": "2026-08-06",
+        "article_id": "article-001",
+        "source_url": "https://example.com/news/article-001",
+        "body_type": "Original-based summary",
+    }
+    cursor.fetchall.return_value = [
+        (
+            12,
+            "12:0",
+            0,
+            "News content",
+            "Registered news",
+            "news.txt",
+            None,
+            None,
+            None,
+            json.dumps(metadata),
+        )
+    ]
+    create_connection_mock.return_value = connection
+    repository = MySQLChunkRepository(_settings())
+
+    chunks = repository.find_by_chunk_keys(["12:0"])
+
+    assert chunks[0].metadata == metadata
+    assert chunks[0].chunk_key == "12:0"
