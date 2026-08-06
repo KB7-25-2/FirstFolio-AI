@@ -350,6 +350,80 @@ def test_update_document_storage_with_shared_connection() -> None:
 
 
 @patch("app.infrastructure.repositories.mysql_document.create_mysql_connection")
+def test_delete_document_commits(
+    create_connection_mock: Mock,
+) -> None:
+    connection, cursor = _connection_and_cursor()
+    cursor.rowcount = 1
+    create_connection_mock.return_value = connection
+    repository = MySQLDocumentRepository(_settings())
+
+    repository.delete(12)
+
+    sql, parameters = cursor.execute.call_args.args
+    normalized_sql = " ".join(sql.split())
+
+    assert "DELETE FROM AI_DOCUMENTS" in normalized_sql
+    assert parameters == (12,)
+    connection.commit.assert_called_once_with()
+    connection.rollback.assert_not_called()
+    cursor.close.assert_called_once_with()
+    connection.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.repositories.mysql_document.create_mysql_connection")
+def test_delete_document_rolls_back_when_document_is_missing(
+    create_connection_mock: Mock,
+) -> None:
+    connection, cursor = _connection_and_cursor()
+    cursor.rowcount = 0
+    create_connection_mock.return_value = connection
+    repository = MySQLDocumentRepository(_settings())
+
+    with pytest.raises(
+        DocumentNotFoundError,
+        match="12",
+    ):
+        repository.delete(12)
+
+    connection.commit.assert_not_called()
+    connection.rollback.assert_called_once_with()
+    cursor.close.assert_called_once_with()
+    connection.close.assert_called_once_with()
+
+
+def test_delete_with_shared_connection_does_not_finish_transaction() -> None:
+    connection, cursor = _connection_and_cursor()
+    cursor.rowcount = 1
+    repository = MySQLDocumentRepository(_settings())
+
+    repository.delete_in_transaction(
+        connection=connection,
+        document_id=12,
+    )
+
+    connection.commit.assert_not_called()
+    connection.rollback.assert_not_called()
+    connection.close.assert_not_called()
+    cursor.close.assert_called_once_with()
+
+
+@patch("app.infrastructure.repositories.mysql_document.create_mysql_connection")
+def test_delete_rejects_non_positive_id(
+    create_connection_mock: Mock,
+) -> None:
+    repository = MySQLDocumentRepository(_settings())
+
+    with pytest.raises(
+        ValueError,
+        match="양의 정수",
+    ):
+        repository.delete(0)
+
+    create_connection_mock.assert_not_called()
+
+
+@patch("app.infrastructure.repositories.mysql_document.create_mysql_connection")
 def test_update_document_storage_rolls_back_when_document_is_missing(
     create_connection_mock: Mock,
 ) -> None:

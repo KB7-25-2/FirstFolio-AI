@@ -209,6 +209,55 @@ class MySQLDocumentRepository:
         finally:
             cursor.close()
 
+    def delete(
+        self,
+        document_id: int,
+    ) -> None:
+        self._validate_document_id(document_id)
+        connection = create_mysql_connection(self._settings)
+
+        try:
+            self.delete_in_transaction(
+                connection=connection,
+                document_id=document_id,
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def delete_in_transaction(
+        self,
+        connection: MySQLConnectionAbstract,
+        document_id: int,
+    ) -> None:
+        self._validate_document_id(document_id)
+        cursor = connection.cursor()
+
+        try:
+            # 청크는 AI_DOCUMENT_CHUNKS의 ON DELETE CASCADE로 함께 삭제된다.
+            cursor.execute(
+                """
+                DELETE FROM AI_DOCUMENTS
+                WHERE document_id = %s
+                """,
+                (document_id,),
+            )
+
+            if cursor.rowcount != 1:
+                raise DocumentNotFoundError(f"문서를 찾을 수 없습니다: {document_id}")
+        finally:
+            cursor.close()
+
+    @staticmethod
+    def _validate_document_id(
+        document_id: int,
+    ) -> None:
+        if document_id <= 0:
+            raise ValueError("document_id는 양의 정수여야 합니다.")
+
     @staticmethod
     def _validate_new_document(
         document: DocumentMetadata,
