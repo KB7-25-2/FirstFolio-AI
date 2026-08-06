@@ -1,4 +1,5 @@
 from app.application.chunkers.paragraph import ParagraphChunker
+from app.application.chunkers.textbook import TextbookChunker
 from app.domain.document import SourceDocument
 
 
@@ -75,10 +76,7 @@ def test_extract_and_propagate_numbered_textbook_headings() -> None:
         source="financial_textbook.txt",
     )
 
-    chunks = ParagraphChunker().chunk(
-        document,
-        extract_textbook_headings=True,
-    )
+    chunks = TextbookChunker(ParagraphChunker()).chunk(document)
 
     assert [chunk.heading for chunk in chunks] == [
         "가계의 저축 의사 결정",
@@ -102,10 +100,7 @@ def test_textbook_heading_metadata_does_not_change_chunk_structure() -> None:
     )
 
     default_chunks = ParagraphChunker().chunk(document)
-    heading_chunks = ParagraphChunker().chunk(
-        document,
-        extract_textbook_headings=True,
-    )
+    heading_chunks = TextbookChunker(ParagraphChunker()).chunk(document)
 
     assert len(heading_chunks) == len(default_chunks)
     assert [chunk.content for chunk in heading_chunks] == [
@@ -131,9 +126,6 @@ def test_leave_heading_empty_when_textbook_has_no_numbered_heading() -> None:
         source="financial_textbook.txt",
     )
 
-    chunks = ParagraphChunker().chunk(
-        document,
-        extract_textbook_headings=True,
-    )
+    chunks = TextbookChunker(ParagraphChunker()).chunk(document)
 
     assert all(chunk.heading is None for chunk in chunks)

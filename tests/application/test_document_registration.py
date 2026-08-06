@@ -4,6 +4,7 @@ import pytest
 
 from app.application.document_registration import TextDocumentRegistrationPipeline
 from app.core.config import Settings
+from app.domain.chunk import DocumentChunk
 from app.domain.document import DocumentMetadata
 from app.infrastructure.document_loaders.text import EmptyDocumentError
 
@@ -251,6 +252,109 @@ def test_roll_back_document_when_chunk_storage_fails(
     connection.rollback.assert_called_once_with()
     connection.close.assert_called_once_with()
     index_invalidator.assert_not_called()
+
+
+@patch("app.application.document_registration.create_mysql_connection")
+@patch("app.application.document_registration.download_text_object")
+@patch("app.application.document_registration.upload_text_object")
+def test_register_selects_chunker_by_document_type(
+    upload_mock: Mock,
+    download_mock: Mock,
+    create_connection_mock: Mock,
+) -> None:
+    upload_mock.return_value = "version-001"
+    download_mock.return_value = b"news content"
+    connection = Mock()
+    create_connection_mock.return_value = connection
+    document_repository = Mock()
+    document_repository.create_in_transaction.return_value = 12
+    chunk_repository = Mock()
+    selected_chunk = DocumentChunk(
+        document_id="12",
+        chunk_key="12:0",
+        sequence=0,
+        content="selected news chunk",
+        title="News",
+        source="news.txt",
+    )
+    document_chunker = Mock()
+    document_chunker.chunk.return_value = [selected_chunk]
+    chunker_registry = Mock()
+    chunker_registry.get.return_value = document_chunker
+    pipeline = TextDocumentRegistrationPipeline(
+        settings=_settings(),
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+        chunker_registry=chunker_registry,
+    )
+
+    document_id, chunk_count = pipeline.register(
+        content=b"news content",
+        object_key="documents/news.txt",
+        document_type="news",
+        title="News",
+        original_filename="news.txt",
+    )
+
+    assert document_id == 12
+    assert chunk_count == 1
+    chunker_registry.get.assert_called_once_with("news")
+    document_chunker.chunk.assert_called_once()
+    replacement_call = chunk_repository.replace_document_chunks_in_transaction.call_args
+    assert replacement_call.kwargs["chunks"] == [selected_chunk]
+
+
+@patch("app.application.document_registration.create_mysql_connection")
+@patch("app.application.document_registration.download_text_object")
+@patch("app.application.document_registration.upload_text_object")
+def test_replace_selects_chunker_from_stored_document_type(
+    upload_mock: Mock,
+    download_mock: Mock,
+    create_connection_mock: Mock,
+) -> None:
+    upload_mock.return_value = "version-002"
+    download_mock.return_value = b"updated news content"
+    connection = Mock()
+    create_connection_mock.return_value = connection
+    document_repository = Mock()
+    document_repository.find_by_id.return_value = DocumentMetadata(
+        document_id=12,
+        document_type="news",
+        category="finance",
+        title="News",
+        original_filename="news.txt",
+        content_type="text/plain",
+        s3_object_key="documents/news.txt",
+        s3_version_id="version-001",
+        status="ready",
+    )
+    chunk_repository = Mock()
+    selected_chunk = DocumentChunk(
+        document_id="12",
+        chunk_key="12:0",
+        sequence=0,
+        content="selected updated news chunk",
+        title="News",
+        source="news.txt",
+    )
+    document_chunker = Mock()
+    document_chunker.chunk.return_value = [selected_chunk]
+    chunker_registry = Mock()
+    chunker_registry.get.return_value = document_chunker
+    pipeline = TextDocumentRegistrationPipeline(
+        settings=_settings(),
+        document_repository=document_repository,
+        chunk_repository=chunk_repository,
+        chunker_registry=chunker_registry,
+    )
+
+    chunk_count = pipeline.replace(document_id=12, content=b"updated news content")
+
+    assert chunk_count == 1
+    chunker_registry.get.assert_called_once_with("news")
+    document_chunker.chunk.assert_called_once()
+    replacement_call = chunk_repository.replace_document_chunks_in_transaction.call_args
+    assert replacement_call.kwargs["chunks"] == [selected_chunk]
 
 
 @patch("app.application.document_registration.create_mysql_connection")
