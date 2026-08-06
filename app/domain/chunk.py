@@ -11,5 +11,6 @@ class DocumentChunk:
     title: str
     source: str
     heading: str | None = None
+    metadata: dict[str, str] | None = None
     source_url: str | None = None
     published_at: datetime | None = None

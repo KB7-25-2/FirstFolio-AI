@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from unittest.mock import Mock, patch
 
@@ -20,6 +21,7 @@ def _chunk(
     document_id: str = "12",
     sequence: int = 0,
     heading: str | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> DocumentChunk:
     return DocumentChunk(
         document_id=document_id,
@@ -29,6 +31,7 @@ def _chunk(
         title="금융 교과서",
         source="financial_textbook.txt",
         heading=heading,
+        metadata=metadata,
     )
 
 
@@ -58,7 +61,7 @@ def test_save_all_commits_chunks(
 
     assert "INSERT INTO AI_DOCUMENT_CHUNKS" in normalized_sql
     assert "heading" in normalized_sql
-    assert rows == [
+    assert [row[:-1] for row in rows] == [
         (12, "12:0", 0, "paragraph", "저축과 저축 상품", "청크 본문 0"),
         (12, "12:1", 1, "paragraph", "저축과 저축 상품", "청크 본문 1"),
     ]
@@ -105,7 +108,7 @@ def test_replace_document_chunks_deletes_and_inserts_in_one_transaction(
     assert delete_parameters == (12,)
     assert "INSERT INTO AI_DOCUMENT_CHUNKS" in normalized_insert_sql
     assert "heading" in normalized_insert_sql
-    assert rows == [
+    assert [row[:-1] for row in rows] == [
         (12, "12:0", 0, "paragraph", "저축과 저축 상품", "청크 본문 0"),
         (12, "12:1", 1, "paragraph", "저축과 저축 상품", "청크 본문 1"),
     ]
@@ -184,7 +187,7 @@ def test_replace_chunks_with_shared_connection_does_not_finish_transaction(
     assert "DELETE FROM AI_DOCUMENT_CHUNKS" in " ".join(delete_sql.split())
     assert delete_parameters == (12,)
     assert "INSERT INTO AI_DOCUMENT_CHUNKS" in " ".join(insert_sql.split())
-    assert rows == [
+    assert [row[:-1] for row in rows] == [
         (12, "12:0", 0, "paragraph", "저축과 저축 상품", "청크 본문 0"),
         (12, "12:1", 1, "paragraph", "저축과 저축 상품", "청크 본문 1"),
     ]
@@ -224,6 +227,9 @@ def test_find_all_returns_chunks(
             "https://example.com/textbook",
             datetime(2026, 8, 3, 9, 0),
         ),
+    ]
+    cursor.fetchall.return_value = [
+        row + (None,) for row in cursor.fetchall.return_value
     ]
     create_connection_mock.return_value = connection
     repository = MySQLChunkRepository(_settings())
@@ -289,6 +295,9 @@ def test_find_by_chunk_keys_preserves_requested_order(
             None,
         ),
     ]
+    cursor.fetchall.return_value = [
+        row + (None,) for row in cursor.fetchall.return_value
+    ]
     create_connection_mock.return_value = connection
     repository = MySQLChunkRepository(_settings())
 
@@ -328,6 +337,9 @@ def test_find_by_chunk_keys_raises_when_key_is_missing(
             None,
             None,
         )
+    ]
+    cursor.fetchall.return_value = [
+        row + (None,) for row in cursor.fetchall.return_value
     ]
     create_connection_mock.return_value = connection
     repository = MySQLChunkRepository(_settings())
@@ -423,3 +435,97 @@ def test_rejects_invalid_chunk_key(
         repository.save_all([chunk])
 
     create_connection_mock.assert_not_called()
+
+
+@patch("app.infrastructure.repositories.mysql_chunk.create_mysql_connection")
+def test_save_all_serializes_chunk_metadata(
+    create_connection_mock: Mock,
+) -> None:
+    connection, cursor = _connection_and_cursor()
+    create_connection_mock.return_value = connection
+    repository = MySQLChunkRepository(_settings())
+    metadata = {
+        "chapter_heading": "Savings",
+        "section_heading": "Income",
+    }
+
+    repository.save_all([_chunk(metadata=metadata)])
+
+    sql, rows = cursor.executemany.call_args.args
+    normalized_sql = " ".join(sql.split())
+
+    assert "metadata_json" in normalized_sql
+    assert json.loads(rows[0][-1]) == metadata
+
+
+@patch("app.infrastructure.repositories.mysql_chunk.create_mysql_connection")
+def test_find_by_chunk_keys_restores_chunk_metadata(
+    create_connection_mock: Mock,
+) -> None:
+    connection, cursor = _connection_and_cursor()
+    cursor.fetchall.return_value = [
+        (
+            12,
+            "12:0",
+            0,
+            "Chunk body",
+            "Financial Textbook",
+            "financial_textbook.txt",
+            "Income",
+            None,
+            None,
+            '{"chapter_heading": "Savings", "section_heading": "Income"}',
+        )
+    ]
+    create_connection_mock.return_value = connection
+    repository = MySQLChunkRepository(_settings())
+
+    chunks = repository.find_by_chunk_keys(["12:0"])
+
+    sql = cursor.execute.call_args.args[0]
+    assert "chunks.metadata_json" in " ".join(sql.split())
+    assert chunks[0].metadata == {
+        "chapter_heading": "Savings",
+        "section_heading": "Income",
+    }
+
+
+@patch("app.infrastructure.repositories.mysql_chunk.create_mysql_connection")
+def test_find_by_chunk_keys_restores_all_news_metadata(
+    create_connection_mock: Mock,
+) -> None:
+    connection, cursor = _connection_and_cursor()
+    metadata = {
+        "document_type": "\ub274\uc2a4",
+        "title": "Rates rise 12.5%",
+        "publisher": "First Finance",
+        "category": "Finance > Banking",
+        "author": "Reporter Kim",
+        "published_at": "2026-08-05 10:57",
+        "reference_at": "2026-07-31",
+        "collected_at": "2026-08-06",
+        "article_id": "article-001",
+        "source_url": "https://example.com/news/article-001",
+        "body_type": "Original-based summary",
+    }
+    cursor.fetchall.return_value = [
+        (
+            12,
+            "12:0",
+            0,
+            "News content",
+            "Registered news",
+            "news.txt",
+            None,
+            None,
+            None,
+            json.dumps(metadata),
+        )
+    ]
+    create_connection_mock.return_value = connection
+    repository = MySQLChunkRepository(_settings())
+
+    chunks = repository.find_by_chunk_keys(["12:0"])
+
+    assert chunks[0].metadata == metadata
+    assert chunks[0].chunk_key == "12:0"
