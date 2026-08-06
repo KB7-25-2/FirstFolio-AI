@@ -28,6 +28,7 @@ def test_chunk_document_by_paragraphs() -> None:
     assert all(chunk.title == document.title for chunk in chunks)
     assert all(chunk.source == document.source for chunk in chunks)
     assert all(chunk.heading is None for chunk in chunks)
+    assert all(chunk.metadata is None for chunk in chunks)
 
 
 def test_preserve_single_line_break_inside_paragraph() -> None:

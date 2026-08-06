@@ -103,6 +103,9 @@ def test_register_text_document(
         "예금의 의미",
         "예금의 의미",
     ]
+    assert all(
+        chunk.metadata == {"subsection_heading": chunk.heading} for chunk in chunks
+    )
     connection.commit.assert_called_once_with()
     connection.rollback.assert_not_called()
     connection.close.assert_called_once_with()
@@ -423,6 +426,11 @@ def test_replace_text_document(
         "새 예금 단원",
         "새 예금 단원",
     ]
+    replacement_chunks = replacement_call.kwargs["chunks"]
+    assert all(
+        chunk.metadata == {"subsection_heading": chunk.heading}
+        for chunk in replacement_chunks
+    )
     document_repository.update_storage_in_transaction.assert_called_once_with(
         connection=connection,
         document_id=12,
