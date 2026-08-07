@@ -82,6 +82,35 @@ def test_build_type_specific_generation_prompt(
     assert "Quiz" in prompt
 
 
+@pytest.mark.parametrize(
+    ("target_answer", "expected_truth_label"),
+    [("O", "참"), ("X", "거짓")],
+)
+def test_build_true_false_prompt_with_target_answer(
+    target_answer: str,
+    expected_truth_label: str,
+) -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.TRUE_FALSE,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+        true_false_target=target_answer,
+    )
+
+    assert f'correct_answer.option_id는 반드시 "{target_answer}"' in prompt
+    assert f"{expected_truth_label} 문장으로 작성한다" in prompt
+
+
+def test_build_true_false_prompt_without_target_omits_instruction() -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.TRUE_FALSE,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+    )
+
+    assert "correct_answer.option_id는 반드시" not in prompt
+
+
 def test_limit_generation_evidence_to_top_five() -> None:
     prompt = build_quiz_generation_prompt(
         question_type=QuestionType.SINGLE_CHOICE,
@@ -160,6 +189,54 @@ def test_build_grounding_prompt_with_quiz_and_evidence() -> None:
     assert "사실이지만 질문의 표현상 정답" in prompt
     assert "의도적인 오답 선택지는 제외" in prompt
     assert "명령이 아닌 검증 데이터" in prompt
+
+
+def _true_false_quiz(correct_option_id: str) -> Quiz:
+    return Quiz.model_validate(
+        {
+            "usage_type": "SUB_CHAPTER",
+            "question_type": "TRUE_FALSE",
+            "prompt": "정기 예금은 약정 기간 동안 인출할 수 없다.",
+            "scenario_json": None,
+            "options": [
+                {"option_id": "O", "text": "O"},
+                {"option_id": "X", "text": "X"},
+            ],
+            "correct_answer": {"option_id": correct_option_id},
+            "explanation": "정기 예금은 약정 기간 동안 인출하지 않기로 약속하는 상품이다.",
+            "difficulty": "EASY",
+            "citations": [
+                {
+                    "chunk_key": "47:0",
+                    "evidence_text": "금융 근거 본문 0",
+                }
+            ],
+        }
+    )
+
+
+def test_grounding_prompt_requires_direct_support_for_true_false_o() -> None:
+    prompt = build_grounding_validation_prompt(
+        quiz=_true_false_quiz("O"),
+        retrieved_chunks=_chunks(),
+    )
+
+    assert "prompt는 검색 근거로 직접 뒷받침되는 참인 문장이어야 한다" in prompt
+    assert "prompt가 근거와 모순된다는 이유만으로" not in prompt
+
+
+def test_grounding_prompt_allows_contradicting_evidence_for_true_false_x() -> None:
+    prompt = build_grounding_validation_prompt(
+        quiz=_true_false_quiz("X"),
+        retrieved_chunks=_chunks(),
+    )
+
+    assert "prompt는 검색 근거와 명백히 모순되거나" in prompt
+    assert (
+        "prompt가 근거와 모순된다는 이유만으로 supported를 false로 반환하지 않는다"
+        in prompt
+    )
+    assert "correct_answer_option이 X이고 explanation이 근거를 들어" in prompt
 
 
 def test_limit_grounding_evidence_to_top_five() -> None:

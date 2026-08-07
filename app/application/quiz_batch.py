@@ -2,6 +2,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
+from app.application.ports.quiz_prompt_repository import QuizPromptRepository
 from app.application.quiz_generation import (
     QuizGenerationService,
     QuizGenerationValidationError,
@@ -30,9 +31,11 @@ class QuizBatchService:
         self,
         generation_service: QuizGenerationService,
         id_factory: Callable[[], UUID] = uuid4,
+        prompt_repository: QuizPromptRepository | None = None,
     ) -> None:
         self._generation_service = generation_service
         self._id_factory = id_factory
+        self._prompt_repository = prompt_repository
 
     def generate(
         self,
@@ -43,7 +46,11 @@ class QuizBatchService:
 
         batch_id = self._id_factory()
         records: list[QuizBatchRecord] = []
-        successful_prompts: list[str] = []
+        successful_prompts: list[str] = (
+            list(self._prompt_repository.find_all_prompts())
+            if self._prompt_repository is not None
+            else []
+        )
         successful_items_by_prompt: dict[str, UUID] = {}
 
         for requested_item in items:
@@ -68,6 +75,13 @@ class QuizBatchService:
                     prompt = record.result.quiz.prompt
                     successful_prompts.append(prompt)
                     successful_items_by_prompt[normalize_quiz_prompt(prompt)] = item_id
+
+                    if self._prompt_repository is not None:
+                        self._prompt_repository.save(
+                            prompt=prompt,
+                            question_type=item_input.question_type,
+                            topic=item_input.topic,
+                        )
 
         return QuizBatchRun(
             records=tuple(records),
@@ -142,6 +156,16 @@ class QuizBatchService:
                         original_item_id=original_item_id,
                         prompt=duplicate_prompt,
                     ),
+                )
+
+            if duplicate_prompt is not None:
+                return _failure_record(
+                    batch_id=batch_id,
+                    item_id=item_id,
+                    item_input=item_input,
+                    stage=error.stage,
+                    errors=list(error.errors),
+                    reason="이전에 생성된 질문과 동일하여 중복 처리되었습니다.",
                 )
 
             return _failure_record(
