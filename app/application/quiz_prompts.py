@@ -115,11 +115,12 @@ def build_quiz_generation_prompt(
 def _grounding_type_rule(quiz: Quiz) -> str:
     if quiz.question_type == QuestionType.SCENARIO:
         return (
-            "prompt와 explanation의 핵심 주장이 검색 근거로 뒷받침되는지 확인한다. "
-            "correct_answer_option과 scenario_json의 수치(기간, 금리, 금액)는 "
-            "시나리오 설정값이므로 근거 확인 없이 허용한다. scenario_json의 제약 "
-            "조건만으로 정답 하나를 논리적으로 결정할 수 있는지 확인하고, "
-            "결정할 수 없으면 supported를 false로 반환한다."
+            "scenario_json의 제약 조건(기간, 유동성, 위험 허용 범위 등)만으로 "
+            "정답 하나를 논리적으로 결정할 수 있는지 확인한다. "
+            "결정할 수 없으면 supported를 false로 반환한다. "
+            "explanation은 시나리오 제약 조건을 근거로 정답을 설명하는 글이므로 "
+            "검색 근거와 직접 대응하지 않아도 된다. explanation이 검색 근거와 "
+            "명백히 모순되지 않으면 supported를 true로 반환한다."
         )
 
     if quiz.question_type != QuestionType.TRUE_FALSE:
@@ -190,6 +191,8 @@ def build_grounding_validation_prompt(
   포함하지 않는다.
 - SCENARIO에서 scenario_json과 선택지의 수치(기간, 금리, 금액)는 시나리오
   설정값이므로 검색 근거 확인 없이 허용한다.
+- SCENARIO에서 explanation은 시나리오 제약 조건을 근거로 정답을 설명하는 글이므로
+  검색 근거와 직접 대응하지 않아도 된다. 검색 근거와 명백히 모순되지 않으면 허용한다.
 - SCENARIO에서 정답이 scenario_json의 제약 조건(기간, 유동성, 위험 허용 범위 등)
   으로 논리적으로 결정될 수 있으면 supported를 true로 반환한다.
 - SCENARIO 이외에서 정답 선택지의 구체적인 금액, 금리, 비율과 기간이
