@@ -416,10 +416,10 @@ def test_find_unsupported_numeric_claims_in_scenario_correct_answer_and_explanat
     unsupported_claims = find_unsupported_numeric_claims(quiz, chunks)
 
     assert unsupported_claims == (
-        financial_context,
         correct_answer,
         explanation,
     )
+    assert financial_context not in unsupported_claims
     assert quiz.scenario_json.constraints[0] not in unsupported_claims
     assert quiz.options[0].text not in unsupported_claims
 

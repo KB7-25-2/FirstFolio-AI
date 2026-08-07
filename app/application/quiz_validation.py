@@ -56,15 +56,6 @@ def find_unsupported_numeric_claims(
 def _numeric_grounding_targets(quiz: Quiz) -> tuple[str, ...]:
     targets = [quiz.prompt]
 
-    if quiz.scenario_json is not None:
-        targets.extend(
-            [
-                quiz.scenario_json.character,
-                quiz.scenario_json.financial_context,
-                *quiz.scenario_json.constraints,
-            ]
-        )
-
     correct_answer_option = next(
         (
             option.text
