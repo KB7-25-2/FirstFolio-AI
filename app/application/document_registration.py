@@ -1,7 +1,10 @@
 from collections.abc import Callable
 from datetime import datetime
 
-from app.application.chunkers.paragraph import ParagraphChunker
+from app.application.chunkers.registry import (
+    DocumentChunkerRegistry,
+    create_default_chunker_registry,
+)
 from app.core.config import Settings
 from app.domain.document import DocumentMetadata
 from app.infrastructure.database import create_mysql_connection
@@ -21,13 +24,18 @@ class TextDocumentRegistrationPipeline:
         document_repository: MySQLDocumentRepository,
         chunk_repository: MySQLChunkRepository,
         index_invalidator: Callable[[], None] | None = None,
+        chunker_registry: DocumentChunkerRegistry | None = None,
     ) -> None:
         self._settings = settings
         self._document_repository = document_repository
         self._chunk_repository = chunk_repository
         self._index_invalidator = index_invalidator
         self._loader = TextDocumentLoader()
-        self._chunker = ParagraphChunker()
+        self._chunker_registry = (
+            chunker_registry
+            if chunker_registry is not None
+            else create_default_chunker_registry()
+        )
 
     def register(
         self,
@@ -84,7 +92,7 @@ class TextDocumentRegistrationPipeline:
                 title=title,
                 source=source_url or original_filename,
             )
-            chunks = self._chunker.chunk(source_document)
+            chunks = self._chunker_registry.get(document_type).chunk(source_document)
 
             self._chunk_repository.replace_document_chunks_in_transaction(
                 connection=connection,
@@ -138,7 +146,9 @@ class TextDocumentRegistrationPipeline:
                 source=current_document.source_url
                 or current_document.original_filename,
             )
-            chunks = self._chunker.chunk(source_document)
+            chunks = self._chunker_registry.get(current_document.document_type).chunk(
+                source_document
+            )
 
             self._chunk_repository.replace_document_chunks_in_transaction(
                 connection=connection,

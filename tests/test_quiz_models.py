@@ -1,7 +1,16 @@
 import pytest
 from pydantic import ValidationError
 
-from app.domain.quiz import GroundingValidation, Quiz, QuizGenerationResult
+from app.domain.quiz import (
+    GroundingValidation,
+    Quiz,
+    QuizBatchError,
+    QuizBatchInput,
+    QuizBatchItemInput,
+    QuizBatchRecord,
+    QuizBatchStatus,
+    QuizGenerationResult,
+)
 
 
 def _valid_payload(
@@ -251,4 +260,43 @@ def test_reject_unknown_grounding_validation_field() -> None:
                 "unsupported_claims": [],
                 "confidence": 0.99,
             }
+        )
+
+
+def test_accept_batch_input_with_default_count() -> None:
+    batch_input = QuizBatchInput.model_validate(
+        {
+            "items": [
+                {
+                    "question_type": "TRUE_FALSE",
+                    "topic": "예금",
+                }
+            ]
+        }
+    )
+
+    assert batch_input.items[0].count == 1
+
+
+def test_reject_batch_record_with_status_payload_mismatch() -> None:
+    with pytest.raises(ValidationError, match="상태와 결과 필드 조합"):
+        QuizBatchRecord(
+            batch_id="00000000-0000-0000-0000-000000000001",
+            item_id="00000000-0000-0000-0000-000000000002",
+            status=QuizBatchStatus.FAILED,
+            input=QuizBatchItemInput(
+                question_type="TRUE_FALSE",
+                topic="예금",
+            ),
+            result=None,
+            error=QuizBatchError(
+                stage="search",
+                errors=["search_result_required"],
+                reason="검색 결과가 없습니다.",
+                unsupported_claims=[],
+            ),
+            duplicate={
+                "original_item_id": "00000000-0000-0000-0000-000000000003",
+                "prompt": "중복 질문",
+            },
         )

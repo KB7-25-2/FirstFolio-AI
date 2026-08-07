@@ -1,9 +1,15 @@
+import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from app.domain.chunk import DocumentChunk
 from app.domain.quiz import QuestionType, Quiz, UsageType
+
+_NUMERIC_FINANCIAL_CLAIM_PATTERN = re.compile(
+    r"(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*"
+    r"(?:조\s*원|억\s*원|만\s*원|천\s*원|원|%|퍼센트|개월|년|일|시간|회)"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +27,66 @@ def normalize_quiz_prompt(prompt: str) -> str:
         if not unicodedata.category(character).startswith("P")
     )
     return " ".join(without_punctuation.split())
+
+
+def find_unsupported_numeric_claims(
+    quiz: Quiz,
+    retrieved_chunks: Sequence[DocumentChunk],
+) -> tuple[str, ...]:
+    evidence_claims = {
+        _normalize_numeric_claim(match.group())
+        for chunk in retrieved_chunks[:5]
+        for match in _NUMERIC_FINANCIAL_CLAIM_PATTERN.finditer(chunk.content)
+    }
+    unsupported_claims: list[str] = []
+
+    for target in _numeric_grounding_targets(quiz):
+        target_claims = {
+            _normalize_numeric_claim(match.group())
+            for match in _NUMERIC_FINANCIAL_CLAIM_PATTERN.finditer(target)
+        }
+
+        if target_claims - evidence_claims and target not in unsupported_claims:
+            unsupported_claims.append(target)
+
+    return tuple(unsupported_claims)
+
+
+def _numeric_grounding_targets(quiz: Quiz) -> tuple[str, ...]:
+    targets = [quiz.prompt]
+
+    if quiz.scenario_json is not None:
+        targets.extend(
+            [
+                quiz.scenario_json.character,
+                quiz.scenario_json.financial_context,
+                *quiz.scenario_json.constraints,
+            ]
+        )
+
+    correct_answer_option = next(
+        (
+            option.text
+            for option in quiz.options
+            if option.option_id == quiz.correct_answer.option_id
+        ),
+        None,
+    )
+
+    if correct_answer_option is not None:
+        targets.append(correct_answer_option)
+
+    targets.append(quiz.explanation)
+    return tuple(targets)
+
+
+def _normalize_numeric_claim(claim: str) -> str:
+    normalized = unicodedata.normalize("NFKC", claim)
+    return "".join(
+        character
+        for character in normalized
+        if not character.isspace() and character != ","
+    )
 
 
 def align_quiz_citation_evidence(

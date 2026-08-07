@@ -76,22 +76,15 @@ def _build_quiz_output_model(
     citation_candidates: Mapping[str, Sequence[str]],
 ) -> type[Quiz]:
     chunk_keys = tuple(citation_candidates)
-    evidence_texts = tuple(
-        evidence_text
-        for candidates in citation_candidates.values()
-        for evidence_text in candidates
-    )
 
-    if not chunk_keys or not evidence_texts:
+    if not chunk_keys:
         raise ValueError("퀴즈 출처 후보는 비어 있을 수 없습니다.")
 
     chunk_key_type = Literal.__getitem__(chunk_keys)
-    evidence_text_type = Literal.__getitem__(evidence_texts)
     citation_model = create_model(
         "ConstrainedQuizCitation",
         __base__=QuizCitation,
         chunk_key=(chunk_key_type, ...),
-        evidence_text=(evidence_text_type, ...),
     )
     return create_model(
         "ConstrainedQuiz",

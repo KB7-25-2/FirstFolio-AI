@@ -1,3 +1,4 @@
+import json
 from collections.abc import Sequence
 
 from mysql.connector.abstracts import MySQLConnectionAbstract
@@ -6,6 +7,8 @@ from app.application.ports.chunk_repository import ChunkNotFoundError
 from app.core.config import Settings
 from app.domain.chunk import DocumentChunk
 from app.infrastructure.database import create_mysql_connection
+
+_InsertRow = tuple[int, str, int, str, str | None, str, str | None]
 
 
 class MySQLChunkRepository:
@@ -34,9 +37,11 @@ class MySQLChunkRepository:
                         chunk_key,
                         chunk_order,
                         chunk_type,
-                        content
+                        heading,
+                        content,
+                        metadata_json
                     )
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
                     rows,
                 )
@@ -93,7 +98,7 @@ class MySQLChunkRepository:
         self,
         document_id: str,
         chunks: Sequence[DocumentChunk],
-    ) -> tuple[int, list[tuple[int, str, int, str, str]]]:
+    ) -> tuple[int, list[_InsertRow]]:
         numeric_document_id = self._parse_document_id(document_id)
 
         for chunk in chunks:
@@ -110,7 +115,7 @@ class MySQLChunkRepository:
     def _execute_chunk_replacement(
         connection: MySQLConnectionAbstract,
         document_id: int,
-        rows: Sequence[tuple[int, str, int, str, str]],
+        rows: Sequence[_InsertRow],
     ) -> None:
         cursor = connection.cursor()
 
@@ -131,9 +136,11 @@ class MySQLChunkRepository:
                         chunk_key,
                         chunk_order,
                         chunk_type,
-                        content
+                        heading,
+                        content,
+                        metadata_json
                     )
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
                     rows,
                 )
@@ -161,7 +168,8 @@ class MySQLChunkRepository:
                         ) AS source,
                         chunks.heading,
                         documents.source_url,
-                        documents.published_at
+                        documents.published_at,
+                        chunks.metadata_json
                     FROM AI_DOCUMENT_CHUNKS AS chunks
                     INNER JOIN AI_DOCUMENTS AS documents
                         ON documents.document_id = chunks.document_id
@@ -206,7 +214,8 @@ class MySQLChunkRepository:
                         ) AS source,
                         chunks.heading,
                         documents.source_url,
-                        documents.published_at
+                        documents.published_at,
+                        chunks.metadata_json
                     FROM AI_DOCUMENT_CHUNKS AS chunks
                     INNER JOIN AI_DOCUMENTS AS documents
                         ON documents.document_id = chunks.document_id
@@ -237,8 +246,8 @@ class MySQLChunkRepository:
     def _build_insert_rows(
         self,
         chunks: Sequence[DocumentChunk],
-    ) -> list[tuple[int, str, int, str, str]]:
-        rows: list[tuple[int, str, int, str, str]] = []
+    ) -> list[_InsertRow]:
+        rows: list[_InsertRow] = []
 
         for chunk in chunks:
             document_id = self._parse_document_id(chunk.document_id)
@@ -255,7 +264,11 @@ class MySQLChunkRepository:
                     chunk.chunk_key,
                     chunk.sequence,
                     "paragraph",
+                    chunk.heading,
                     chunk.content,
+                    json.dumps(chunk.metadata, ensure_ascii=False)
+                    if chunk.metadata is not None
+                    else None,
                 )
             )
 
@@ -287,4 +300,22 @@ class MySQLChunkRepository:
             heading=None if row[6] is None else str(row[6]),
             source_url=None if row[7] is None else str(row[7]),
             published_at=row[8],
+            metadata=MySQLChunkRepository._parse_metadata(row[9]),
         )
+
+    @staticmethod
+    def _parse_metadata(value: object) -> dict[str, str] | None:
+        if value is None:
+            return None
+
+        parsed = json.loads(value) if isinstance(value, str) else value
+
+        if not isinstance(parsed, dict) or not all(
+            isinstance(key, str) and isinstance(item, str)
+            for key, item in parsed.items()
+        ):
+            raise ValueError(
+                "metadata_json must contain an object with string keys and values."
+            )
+
+        return dict(parsed)

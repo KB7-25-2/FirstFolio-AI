@@ -1,7 +1,8 @@
 from datetime import datetime
 from enum import StrEnum
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class UsageType(StrEnum):
@@ -110,3 +111,91 @@ class QuizGenerationResult(BaseModel):
     sources: list[QuizSource]
     validation: QuizValidation
     execution: QuizExecution
+
+
+class QuizBatchStatus(StrEnum):
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    DUPLICATE = "DUPLICATE"
+
+
+class QuizBatchItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question_type: str
+    topic: str
+
+
+class QuizBatchRequestItem(QuizBatchItemInput):
+    count: int = Field(default=1, ge=1, strict=True)
+
+
+class QuizBatchInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[QuizBatchRequestItem] = Field(min_length=1)
+
+
+class QuizBatchError(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stage: str = Field(min_length=1)
+    errors: list[str] = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    unsupported_claims: list[str]
+
+
+class QuizBatchDuplicate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    original_item_id: UUID
+    prompt: str = Field(min_length=1)
+
+
+class QuizBatchRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    batch_id: UUID
+    item_id: UUID
+    status: QuizBatchStatus
+    input: QuizBatchItemInput
+    result: QuizGenerationResult | None
+    error: QuizBatchError | None
+    duplicate: QuizBatchDuplicate | None
+
+    @model_validator(mode="after")
+    def validate_status_payload(self) -> "QuizBatchRecord":
+        if self.status == QuizBatchStatus.SUCCEEDED:
+            valid = (
+                self.result is not None
+                and self.error is None
+                and self.duplicate is None
+            )
+        elif self.status == QuizBatchStatus.FAILED:
+            valid = (
+                self.result is None
+                and self.error is not None
+                and self.duplicate is None
+            )
+        else:
+            valid = (
+                self.result is None
+                and self.error is not None
+                and self.duplicate is not None
+            )
+
+        if not valid:
+            raise ValueError("배치 상태와 결과 필드 조합이 올바르지 않습니다.")
+
+        return self
+
+
+class QuizBatchSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    batch_id: UUID
+    total: int = Field(ge=0)
+    succeeded: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    duplicates: int = Field(ge=0)
+    output_path: str | None = None

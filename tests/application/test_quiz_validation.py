@@ -4,6 +4,7 @@ import pytest
 
 from app.application.quiz_validation import (
     align_quiz_citation_evidence,
+    find_unsupported_numeric_claims,
     normalize_quiz_prompt,
     validate_quiz_rules,
 )
@@ -371,3 +372,65 @@ def test_do_not_mark_different_prompt_as_duplicate() -> None:
 
     assert result.duplicate is False
     assert "duplicate_prompt" not in result.errors
+
+
+def test_find_unsupported_numeric_claims_in_scenario_correct_answer_and_explanation() -> (
+    None
+):
+    chunks = _chunks()
+    chunks[0] = replace(
+        chunks[0],
+        content=(
+            "정기 예금의 약정 기간은 1개월 이상 5년 이내이다. "
+            "일반적으로 예치 기간이 길수록 금리가 높아진다."
+        ),
+    )
+    financial_context = (
+        "대학 진학을 위해 100만 원을 저축하려고 하며 상품마다 만기가 다르다."
+    )
+    correct_answer = "5년 후 만기, 이자율 4.0%"
+    explanation = "100만 원을 5년 동안 4.0% 금리로 맡기는 것이 가장 유리하다."
+    quiz = _quiz(
+        "SCENARIO",
+        prompt="어떤 정기 예금 상품을 선택해야 할까요?",
+        scenario_json={
+            "character": "고등학생",
+            "financial_context": financial_context,
+            "constraints": [
+                "예치 기간이 1개월 이상 5년 이내",
+                "중도 해지할 경우 낮은 금리 적용",
+            ],
+        },
+        options=[
+            {"option_id": "1", "text": "1개월 후 만기, 이자율 1.5%"},
+            {"option_id": "2", "text": "1년 후 만기, 이자율 2.0%"},
+            {"option_id": "3", "text": "3년 후 만기, 이자율 3.5%"},
+            {"option_id": "4", "text": correct_answer},
+        ],
+        correct_answer={"option_id": "4"},
+        explanation=explanation,
+    )
+
+    unsupported_claims = find_unsupported_numeric_claims(quiz, chunks)
+
+    assert unsupported_claims == (
+        financial_context,
+        correct_answer,
+        explanation,
+    )
+    assert quiz.scenario_json.constraints[0] not in unsupported_claims
+    assert quiz.options[0].text not in unsupported_claims
+
+
+def test_accept_numeric_claims_present_in_evidence() -> None:
+    chunks = _chunks()
+    chunks[0] = replace(
+        chunks[0],
+        content="정기 예금의 약정 기간은 5년 이내이다.",
+    )
+    quiz = _quiz(
+        prompt="다음 4개 선택지 중 정기 예금의 약정 기간은 5년 이내인가?",
+        explanation="정기 예금의 약정 기간은 5년 이내이다.",
+    )
+
+    assert find_unsupported_numeric_claims(quiz, chunks) == ()

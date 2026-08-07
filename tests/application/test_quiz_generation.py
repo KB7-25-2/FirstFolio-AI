@@ -439,21 +439,10 @@ def test_reject_unsupported_grounding_result() -> None:
     model_client.validate_grounding.assert_called_once()
 
 
-def test_preserve_diagnostics_for_generated_content_expansion() -> None:
+def test_reject_numeric_content_expansion_before_llm_grounding() -> None:
     expanded_claim = "요구불 예금은 항상 연 10% 이자를 지급한다."
     quiz = _quiz(explanation=expanded_claim)
     service, model_client, _ = _service(quiz=quiz)
-    grounding_validation = GroundingValidation(
-        supported=False,
-        reason="해설의 이자율은 검색 근거에 없는 내용이다.",
-        unsupported_claims=[expanded_claim],
-    )
-    model_client.validate_grounding.return_value = GroundingModelResult(
-        validation=grounding_validation,
-        input_tokens=40,
-        output_tokens=20,
-    )
-
     with pytest.raises(QuizGenerationValidationError) as error:
         service.generate(
             question_type=QuestionType.SINGLE_CHOICE,
@@ -463,8 +452,12 @@ def test_preserve_diagnostics_for_generated_content_expansion() -> None:
     retrieved_text = " ".join(chunk.content for chunk in error.value.retrieved_chunks)
     assert expanded_claim not in retrieved_text
     assert error.value.stage == "grounding_validation"
-    assert error.value.reason == grounding_validation.reason
+    assert error.value.reason == (
+        "질문, 시나리오, 정답 선택지 또는 해설에 검색 근거로 확인할 수 없는 "
+        "금융 수치가 있습니다."
+    )
     assert error.value.unsupported_claims == (expanded_claim,)
+    model_client.validate_grounding.assert_not_called()
 
 
 def test_preserve_actual_overstrict_grounding_failure_fixture(
@@ -568,3 +561,60 @@ def test_reject_when_another_option_can_also_be_correct() -> None:
     assert error.value.errors == ("grounding_not_supported",)
     assert error.value.reason == grounding_validation.reason
     assert error.value.unsupported_claims == ()
+
+
+def test_reject_unsupported_scenario_numbers_before_llm_grounding() -> None:
+    chunks = _chunks()
+    chunks[0] = replace(
+        chunks[0],
+        content=(
+            "정기 예금의 약정 기간은 1개월 이상 5년 이내이다. "
+            "일반적으로 예치 기간이 길수록 금리가 높아진다."
+        ),
+    )
+    financial_context = "대학 진학을 위해 100만 원을 저축하려고 한다."
+    correct_answer = "5년 후 만기, 이자율 4.0%"
+    explanation = "100만 원을 5년 동안 4.0% 금리로 맡기는 것이 가장 유리하다."
+    quiz = _quiz(
+        QuestionType.SCENARIO,
+        prompt="어떤 정기 예금 상품을 선택해야 할까요?",
+        scenario_json={
+            "character": "고등학생",
+            "financial_context": financial_context,
+            "constraints": ["예치 기간이 1개월 이상 5년 이내"],
+        },
+        options=[
+            {"option_id": "1", "text": "1개월 후 만기, 이자율 1.5%"},
+            {"option_id": "2", "text": "1년 후 만기, 이자율 2.0%"},
+            {"option_id": "3", "text": "3년 후 만기, 이자율 3.5%"},
+            {"option_id": "4", "text": correct_answer},
+        ],
+        correct_answer={"option_id": "4"},
+        explanation=explanation,
+        citations=[
+            {
+                "chunk_key": "47:0",
+                "evidence_text": ("정기 예금의 약정 기간은 1개월 이상 5년 이내이다."),
+            }
+        ],
+    )
+    service, model_client, _ = _service(quiz=quiz, chunks=chunks)
+
+    with pytest.raises(QuizGenerationValidationError) as error:
+        service.generate(
+            question_type=QuestionType.SCENARIO,
+            topic="정기 예금 선택 상황",
+        )
+
+    assert error.value.errors == ("grounding_not_supported",)
+    assert error.value.stage == "grounding_validation"
+    assert error.value.reason == (
+        "질문, 시나리오, 정답 선택지 또는 해설에 검색 근거로 확인할 수 없는 "
+        "금융 수치가 있습니다."
+    )
+    assert error.value.unsupported_claims == (
+        financial_context,
+        correct_answer,
+        explanation,
+    )
+    model_client.validate_grounding.assert_not_called()
