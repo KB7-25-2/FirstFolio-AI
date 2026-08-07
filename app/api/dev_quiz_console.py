@@ -1,7 +1,10 @@
 import html
+import random
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -30,6 +33,12 @@ _STATUS_LABELS: dict[QuizBatchStatus, tuple[str, str]] = {
     QuizBatchStatus.DUPLICATE: ("중복", "warning"),
 }
 
+_CATEGORIES = ["예·적금", "채권", "주식", "펀드"]
+_QUESTION_TYPES = [qt.value for qt in QuestionType]
+
+_INPUT_TOKEN_PRICE_USD = 0.15 / 1_000_000
+_OUTPUT_TOKEN_PRICE_USD = 0.60 / 1_000_000
+
 _STYLE = """
 body { font-family: -apple-system, sans-serif; margin: 2rem auto; max-width: 960px; color: #1a1a1a; }
 h1 { font-size: 20px; }
@@ -45,9 +54,13 @@ h2 { font-size: 16px; margin-top: 2rem; }
 .panel form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .panel label { display: flex; flex-direction: column; font-size: 13px; color: #555; gap: 4px; }
 .panel input, .panel select { padding: 6px 8px; font-size: 14px; }
+.panel input[type=number] { width: 64px; }
 .panel button { padding: 8px 16px; font-size: 14px; cursor: pointer; }
-.entry { border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 8px; padding: 4px 12px; }
-.entry summary { display: grid; grid-template-columns: 110px 110px 1fr 80px 100px 80px 1fr; gap: 8px; align-items: center; cursor: pointer; padding: 8px 0; }
+.batch { border: 1px solid #c8d8e8; border-radius: 8px; margin-bottom: 12px; background: #f0f6ff; }
+.batch > summary { display: grid; grid-template-columns: 140px 1fr 90px 120px 120px; gap: 8px; align-items: center; cursor: pointer; padding: 10px 14px; font-size: 13px; font-weight: 500; }
+.batch-items { padding: 0 12px 12px; }
+.entry { border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 8px; padding: 4px 12px; background: #fff; }
+.entry summary { display: grid; grid-template-columns: 110px 110px 1fr 80px 170px 80px 1fr; gap: 8px; align-items: center; cursor: pointer; padding: 8px 0; }
 .cell { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { font-size: 12px; padding: 2px 8px; border-radius: 4px; text-align: center; }
 .badge.tone-success { background: #e6f4ea; color: #1e7b34; }
@@ -55,9 +68,16 @@ h2 { font-size: 16px; margin-top: 2rem; }
 .badge.tone-warning { background: #fff4e0; color: #8a5a00; }
 .detail { padding: 8px 0 12px; border-top: 1px solid #eee; margin-top: 8px; font-size: 13px; }
 .detail ul { margin: 4px 0 8px 20px; }
-.detail li.correct { font-weight: 600; }
+.detail li.correct { color: #b3261e; }
 .empty { color: #777; }
 """
+
+
+@dataclass
+class _BatchGroup:
+    batch_id: UUID
+    mtime: float
+    records: list[QuizBatchRecord] = field(default_factory=list)
 
 
 def get_quiz_batch_service(request: Request) -> QuizBatchService:
@@ -67,13 +87,14 @@ def get_quiz_batch_service(request: Request) -> QuizBatchService:
 
 def _read_history(
     directory: Path | None = None,
-) -> list[tuple[float, QuizBatchRecord]]:
+) -> list[_BatchGroup]:
     target_directory = directory if directory is not None else _HISTORY_DIRECTORY
 
     if not target_directory.exists():
         return []
 
-    entries: list[tuple[float, QuizBatchRecord]] = []
+    groups: dict[UUID, _BatchGroup] = {}
+    mtime_by_batch: dict[UUID, float] = {}
 
     for path in sorted(target_directory.glob("*.jsonl")):
         mtime = path.stat().st_mtime
@@ -82,11 +103,19 @@ def _read_history(
             if not line.strip():
                 continue
 
-            entries.append((mtime, QuizBatchRecord.model_validate_json(line)))
+            record = QuizBatchRecord.model_validate_json(line)
+            bid = record.batch_id
 
-    entries.sort(key=lambda entry: entry[0], reverse=True)
+            if bid not in groups:
+                groups[bid] = _BatchGroup(batch_id=bid, mtime=mtime)
+                mtime_by_batch[bid] = mtime
 
-    return entries
+            groups[bid].records.append(record)
+
+    result = list(groups.values())
+    result.sort(key=lambda g: g.mtime, reverse=True)
+
+    return result
 
 
 @router.get("/quiz-console", response_class=HTMLResponse)
@@ -99,22 +128,36 @@ def generate_from_console(
     service: Annotated[QuizBatchService, Depends(get_quiz_batch_service)],
     question_type: str = Query(...),
     topic: str = Query(""),
+    count: int = Query(1, ge=1, le=100),
 ) -> RedirectResponse:
-    batch_run = service.generate(
-        [QuizBatchRequestItem(question_type=question_type, topic=topic, count=1)]
-    )
+    if topic == "랜덤" or question_type == "랜덤":
+        items = [
+            QuizBatchRequestItem(
+                question_type=random.choice(_QUESTION_TYPES)
+                if question_type == "랜덤"
+                else question_type,
+                topic=random.choice(_CATEGORIES) if topic == "랜덤" else topic,
+                count=1,
+            )
+            for _ in range(count)
+        ]
+    else:
+        items = [
+            QuizBatchRequestItem(question_type=question_type, topic=topic, count=count)
+        ]
+    batch_run = service.generate(items)
     output_path = _HISTORY_DIRECTORY / f"{batch_run.summary.batch_id}.jsonl"
     write_jsonl(output_path, batch_run.records)
 
     return RedirectResponse(url="/api/v1/dev/quiz-console", status_code=303)
 
 
-def _render_page(entries: list[tuple[float, QuizBatchRecord]]) -> str:
-    records = [record for _, record in entries]
-    total = len(records)
-    succeeded = sum(record.status == QuizBatchStatus.SUCCEEDED for record in records)
-    failed = sum(record.status == QuizBatchStatus.FAILED for record in records)
-    duplicates = sum(record.status == QuizBatchStatus.DUPLICATE for record in records)
+def _render_page(groups: list[_BatchGroup]) -> str:
+    all_records = [record for group in groups for record in group.records]
+    total = len(all_records)
+    succeeded = sum(r.status == QuizBatchStatus.SUCCEEDED for r in all_records)
+    failed = sum(r.status == QuizBatchStatus.FAILED for r in all_records)
+    duplicates = sum(r.status == QuizBatchStatus.DUPLICATE for r in all_records)
     success_rate = round(succeeded / total * 100) if total else 0
 
     return f"""<!doctype html>
@@ -141,14 +184,23 @@ def _render_page(entries: list[tuple[float, QuizBatchRecord]]) -> str:
 {_render_question_type_options()}
 </select>
 </label>
-<label>주제
-<input type="text" name="topic" placeholder="정기 예금의 특징" required>
+<label>카테고리
+<select name="topic">
+<option value="랜덤">랜덤</option>
+<option value="예·적금">예·적금</option>
+<option value="채권">채권</option>
+<option value="주식">주식</option>
+<option value="펀드">펀드</option>
+</select>
+</label>
+<label>생성 수
+<input type="number" name="count" value="1" min="1" max="100">
 </label>
 <button type="submit">생성</button>
 </form>
 </section>
 <h2>생성 기록</h2>
-{_render_history(entries)}
+{_render_history(groups)}
 </body>
 </html>
 """
@@ -166,17 +218,61 @@ def _render_metric(label: str, value: object, tone: str | None = None) -> str:
 
 
 def _render_question_type_options() -> str:
-    return "".join(
+    options = '<option value="랜덤">랜덤</option>'
+    options += "".join(
         f'<option value="{question_type.value}">{question_type.value}</option>'
         for question_type in QuestionType
     )
+    return options
 
 
-def _render_history(entries: list[tuple[float, QuizBatchRecord]]) -> str:
-    if not entries:
+def _render_history(groups: list[_BatchGroup]) -> str:
+    if not groups:
         return '<p class="empty">아직 생성한 문제가 없습니다.</p>'
 
-    return "".join(_render_entry(mtime, record) for mtime, record in entries)
+    return "".join(_render_batch_card(group) for group in groups)
+
+
+def _render_batch_card(group: _BatchGroup) -> str:
+    records = group.records
+    total = len(records)
+    succeeded = sum(r.status == QuizBatchStatus.SUCCEEDED for r in records)
+    success_rate = round(succeeded / total * 100) if total else 0
+    generated_at = datetime.fromtimestamp(group.mtime).strftime("%Y-%m-%d %H:%M")
+    cost = _calculate_cost(records)
+
+    tone = (
+        "success"
+        if success_rate == 100
+        else ("danger" if succeeded == 0 else "warning")
+    )
+    summary = (
+        "<summary>"
+        f'<span class="cell">{html.escape(generated_at)}</span>'
+        f'<span class="cell">{total}건 중 {succeeded}건 성공</span>'
+        f'<span class="badge tone-{tone}">{success_rate}%</span>'
+        f'<span class="cell">{html.escape(cost)}</span>'
+        f'<span class="cell" style="color:#999;font-size:12px;">▾ 항목 보기</span>'
+        "</summary>"
+    )
+
+    items = "".join(_render_entry(group.mtime, record) for record in records)
+
+    return f'<details class="batch">{summary}<div class="batch-items">{items}</div></details>'
+
+
+def _calculate_cost(records: list[QuizBatchRecord]) -> str:
+    total_usd = 0.0
+    for record in records:
+        if record.result is not None:
+            ex = record.result.execution
+            total_usd += ex.input_tokens * _INPUT_TOKEN_PRICE_USD
+            total_usd += ex.output_tokens * _OUTPUT_TOKEN_PRICE_USD
+
+    if total_usd == 0:
+        return "비용 없음"
+
+    return f"약 ${total_usd:.4f}"
 
 
 def _render_entry(mtime: float, record: QuizBatchRecord) -> str:
@@ -187,7 +283,7 @@ def _render_entry(mtime: float, record: QuizBatchRecord) -> str:
 
     if record.status == QuizBatchStatus.SUCCEEDED and record.result is not None:
         execution = record.result.execution
-        tokens = f"{execution.input_tokens} / {execution.output_tokens}"
+        tokens = f"입력 {execution.input_tokens} · 출력 {execution.output_tokens}"
         elapsed = f"{execution.elapsed_ms}ms"
         outcome = "근거검증 통과"
     else:

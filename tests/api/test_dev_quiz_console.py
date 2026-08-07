@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.dev_quiz_console import _read_history, get_quiz_batch_service
+from app.api.dev_quiz_console import _BatchGroup, _read_history, get_quiz_batch_service
 from app.application.quiz_batch import QuizBatchRun, QuizBatchService
 from app.domain.quiz import (
     QuizBatchError,
@@ -112,9 +112,10 @@ def test_read_history_parses_and_sorts_by_mtime(tmp_path: Path) -> None:
     older_time = time.time() - 100
     os.utime(older, (older_time, older_time))
 
-    entries = _read_history(tmp_path)
+    groups = _read_history(tmp_path)
 
-    assert [record.input.topic for _, record in entries] == ["최근 항목", "오래된 항목"]
+    assert isinstance(groups[0], _BatchGroup)
+    assert [g.records[0].input.topic for g in groups] == ["최근 항목", "오래된 항목"]
 
 
 def test_read_history_skips_blank_lines(tmp_path: Path) -> None:
@@ -123,9 +124,10 @@ def test_read_history_skips_blank_lines(tmp_path: Path) -> None:
         _succeeded_record().model_dump_json() + "\n\n",
     )
 
-    entries = _read_history(tmp_path)
+    groups = _read_history(tmp_path)
 
-    assert len(entries) == 1
+    assert len(groups) == 1
+    assert len(groups[0].records) == 1
 
 
 @pytest.fixture

@@ -132,7 +132,7 @@ def test_generate_quiz_with_token_usage(
     quiz_client.invoke.assert_called_once_with("퀴즈 생성 프롬프트")
 
 
-def test_constrain_citation_to_retrieved_chunk_keys_and_exact_sentences(
+def test_constrain_citation_to_retrieved_chunk_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client, create_chat_client, quiz_client, _ = _create_client(monkeypatch)
@@ -153,9 +153,7 @@ def test_constrain_citation_to_retrieved_chunk_keys_and_exact_sentences(
     )
     output_model.model_validate(quiz.model_dump())
     invalid_payload = quiz.model_dump()
-    invalid_payload["citations"][0]["evidence_text"] = (
-        "예금은 금융기관에 돈을 맡기는 상품입니다."
-    )
+    invalid_payload["citations"][0]["chunk_key"] = "99:99"
 
     with pytest.raises(ValidationError):
         output_model.model_validate(invalid_payload)
