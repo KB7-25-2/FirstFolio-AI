@@ -11,13 +11,27 @@ _USAGE_TYPE_BY_QUESTION_TYPE = {
     QuestionType.SCENARIO: UsageType.MAIN_CHAPTER,
 }
 
-_TYPE_RULES = {
-    QuestionType.TRUE_FALSE: (
+
+def _true_false_rule(target_answer: str | None) -> str:
+    base_rule = (
         "options의 option_id와 text는 각각 O, X만 사용하고 반드시 "
         '[{"option_id":"O","text":"O"},{"option_id":"X","text":"X"}]'
         "와 완전히 동일하게 구성하며 text에 설명을 추가하지 않고 "
         "scenario_json은 null로 반환한다."
-    ),
+    )
+
+    if target_answer is None:
+        return base_rule
+
+    truth_label = "참" if target_answer == "O" else "거짓"
+    return (
+        f"{base_rule} 이번 문제의 correct_answer.option_id는 반드시 "
+        f'"{target_answer}"이어야 하며, prompt는 검색 근거로 확인되는 '
+        f"{truth_label} 문장으로 작성한다."
+    )
+
+
+_TYPE_RULES = {
     QuestionType.SINGLE_CHOICE: (
         "options는 option_id가 문자열 1, 2, 3, 4인 정확히 네 개로 구성하고 "
         "scenario_json은 null로 반환한다."
@@ -36,6 +50,7 @@ def build_quiz_generation_prompt(
     question_type: QuestionType,
     topic: str,
     retrieved_chunks: Sequence[DocumentChunk],
+    true_false_target: str | None = None,
 ) -> str:
     normalized_topic = topic.strip()
 
@@ -49,6 +64,11 @@ def build_quiz_generation_prompt(
         ensure_ascii=False,
         indent=2,
     )
+    type_rule = (
+        _true_false_rule(true_false_target)
+        if question_type == QuestionType.TRUE_FALSE
+        else _TYPE_RULES[question_type]
+    )
 
     return f"""
 당신은 고등학생을 위한 금융교육 퀴즈 생성기다.
@@ -58,7 +78,7 @@ def build_quiz_generation_prompt(
 문제 주제: {normalized_topic}
 
 유형별 규칙:
-- {_TYPE_RULES[question_type]}
+- {type_rule}
 
 공통 규칙:
 - 정답은 하나만 허용하며 correct_answer.option_id는 options 중 하나를 참조한다.
@@ -85,6 +105,31 @@ def build_quiz_generation_prompt(
 """.strip()
 
 
+def _grounding_type_rule(quiz: Quiz) -> str:
+    if quiz.question_type != QuestionType.TRUE_FALSE:
+        return (
+            "prompt, correct_answer_option과 explanation의 핵심 주장이 검색 "
+            "근거로 직접 뒷받침되는지 확인한다. 근거에 없거나 근거와 모순되면 "
+            "supported를 false로 반환한다."
+        )
+
+    if quiz.correct_answer.option_id == "O":
+        return (
+            "correct_answer_option이 O이므로 prompt는 검색 근거로 직접 뒷받침되는 "
+            "참인 문장이어야 한다. prompt의 핵심 주장이 근거에 없거나 근거와 "
+            "모순되면 supported를 false로 반환한다."
+        )
+
+    return (
+        "correct_answer_option이 X이므로 prompt는 검색 근거와 명백히 모순되거나 "
+        "검색 근거로 확인되지 않는 거짓 문장이어야 한다. prompt가 근거와 "
+        "모순된다는 이유만으로 supported를 false로 반환하지 않는다. explanation이 "
+        "검색 근거를 인용해 prompt가 왜 거짓인지 명확히 설명하는지만 확인하고, "
+        "explanation이 근거 없이 막연하게 거짓이라고 주장하면 supported를 "
+        "false로 반환한다."
+    )
+
+
 def build_grounding_validation_prompt(
     *,
     quiz: Quiz,
@@ -101,18 +146,16 @@ def build_grounding_validation_prompt(
         ensure_ascii=False,
         indent=2,
     )
+    type_rule = _grounding_type_rule(quiz)
 
     return f"""
 당신은 금융교육 퀴즈의 근거 검증기다.
 
 검증 순서:
-1. prompt, scenario_json, correct_answer_option, explanation과 citations가
-   검색 근거로 직접 뒷받침되는지 확인한다.
-2. question_type이 TRUE_FALSE이면 correct_answer_option이 O일 때 prompt가
-   참인지, X일 때 prompt가 거짓인지 확인한다.
-3. distractor_options는 근거의 지원 여부가 아니라 질문과 시나리오에서
+1. {type_rule}
+2. distractor_options는 근거의 지원 여부가 아니라 질문과 시나리오에서
    또 다른 정답이 될 수 있는지만 확인한다.
-4. 위 결과를 종합해 supported를 결정한다.
+3. 위 결과를 종합해 supported를 결정한다.
 
 검증 규칙:
 - correct_answer가 가리키는 정답 선택지는 correct_answer_option으로
@@ -126,8 +169,9 @@ def build_grounding_validation_prompt(
   아니라면 단일 정답 조건을 위반하지 않는다.
 - distractor가 질문과 시나리오에서 실제로 또 다른 정답이 될 수 있을 때만
   단일 정답 조건 위반으로 supported를 false로 반환한다.
-- prompt, correct_answer_option 또는 explanation의 핵심 주장이 근거에
-  없거나 서로 모순되면 supported를 false로 반환한다.
+- TRUE_FALSE에서 correct_answer_option이 X이고 explanation이 근거를 들어
+  prompt가 왜 거짓인지 올바르게 설명하면 prompt를 unsupported_claims에
+  포함하지 않는다.
 - scenario_json의 금융 사실, 금액, 금리, 비율, 날짜와 기간도 검색 근거로
   직접 확인되어야 한다. 허구의 인물 설정이라는 이유로 금융 수치를 허용하지 않는다.
 - prompt가 가장 유리한 상품이나 최선의 선택을 묻는다면 scenario_json의

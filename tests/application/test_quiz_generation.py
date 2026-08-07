@@ -1,3 +1,4 @@
+import random
 from dataclasses import replace
 from unittest.mock import Mock
 
@@ -95,6 +96,7 @@ def _service(
     chunks: list[DocumentChunk] | None = None,
     search_results: list[SearchResult] | None = None,
     supported: bool = True,
+    rng: random.Random | None = None,
 ) -> tuple[
     QuizGenerationService,
     Mock,
@@ -134,6 +136,7 @@ def _service(
         hybrid_search=hybrid_search,
         chunk_repository=repository,
         model_client=model_client,
+        rng=rng,
     )
     return service, model_client, repository
 
@@ -300,6 +303,28 @@ def test_generate_valid_quiz_result(
     generation_prompt = model_client.generate_quiz.call_args.args[0]
     assert 'chunk_key="47:4"' in generation_prompt
     assert 'chunk_key="47:5"' not in generation_prompt
+
+
+@pytest.mark.parametrize(
+    ("seed", "expected_target"),
+    [(0, "X"), (1, "O")],
+)
+def test_generate_true_false_quiz_requests_random_target_answer(
+    seed: int,
+    expected_target: str,
+) -> None:
+    service, model_client, _ = _service(
+        quiz=_quiz(QuestionType.TRUE_FALSE),
+        rng=random.Random(seed),
+    )
+
+    service.generate(
+        question_type=QuestionType.TRUE_FALSE,
+        topic="예금",
+    )
+
+    generation_prompt = model_client.generate_quiz.call_args.args[0]
+    assert f'correct_answer.option_id는 반드시 "{expected_target}"' in generation_prompt
 
 
 def test_stop_before_generation_without_search_result() -> None:
@@ -526,7 +551,23 @@ def test_accept_actual_fixture_when_only_incorrect_distractors_lack_support(
     )
 
     assert result.validation.grounded is True
-    assert result.quiz == quiz
+    assert result.quiz.model_dump(exclude={"options", "correct_answer"}) == (
+        quiz.model_dump(exclude={"options", "correct_answer"})
+    )
+    assert {option.text for option in result.quiz.options} == {
+        option.text for option in quiz.options
+    }
+    result_correct_option = next(
+        option
+        for option in result.quiz.options
+        if option.option_id == result.quiz.correct_answer.option_id
+    )
+    original_correct_option = next(
+        option
+        for option in quiz.options
+        if option.option_id == quiz.correct_answer.option_id
+    )
+    assert result_correct_option.text == original_correct_option.text
     grounding_prompt = model_client.validate_grounding.call_args.args[0]
     assert "오답 선택지가 검색 근거에서 지원되지 않는다는" in grounding_prompt
 

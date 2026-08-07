@@ -17,6 +17,7 @@ from app.domain.quiz import (
     QuizBatchStatus,
     QuizGenerationResult,
 )
+from app.infrastructure.repositories.mysql_quiz_prompt import MySQLQuizPromptRepository
 from app.quiz_batch_dry_run import write_jsonl
 from app.quiz_mvp import create_quiz_generation_service
 
@@ -97,8 +98,10 @@ class _BatchGroup:
 
 
 def get_quiz_batch_service(request: Request) -> QuizBatchService:
-    generation_service = create_quiz_generation_service(request.app.state.settings)
-    return QuizBatchService(generation_service)
+    settings = request.app.state.settings
+    generation_service = create_quiz_generation_service(settings)
+    prompt_repository = MySQLQuizPromptRepository(settings)
+    return QuizBatchService(generation_service, prompt_repository=prompt_repository)
 
 
 def _read_history(

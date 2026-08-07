@@ -1,3 +1,4 @@
+import random
 from dataclasses import replace
 
 import pytest
@@ -6,6 +7,7 @@ from app.application.quiz_validation import (
     align_quiz_citation_evidence,
     find_unsupported_numeric_claims,
     normalize_quiz_prompt,
+    shuffle_quiz_options,
     validate_quiz_rules,
 )
 from app.domain.chunk import DocumentChunk
@@ -434,3 +436,50 @@ def test_accept_numeric_claims_present_in_evidence() -> None:
     )
 
     assert find_unsupported_numeric_claims(quiz, chunks) == ()
+
+
+def test_shuffle_quiz_options_keeps_true_false_unchanged() -> None:
+    quiz = _quiz("TRUE_FALSE")
+
+    shuffled = shuffle_quiz_options(quiz, rng=random.Random(1))
+
+    assert shuffled == quiz
+
+
+def test_shuffle_quiz_options_reorders_and_tracks_correct_answer() -> None:
+    quiz = _quiz(
+        "SINGLE_CHOICE",
+        options=[
+            {"option_id": "1", "text": "정답 선택지"},
+            {"option_id": "2", "text": "오답 선택지 2"},
+            {"option_id": "3", "text": "오답 선택지 3"},
+            {"option_id": "4", "text": "오답 선택지 4"},
+        ],
+        correct_answer={"option_id": "1"},
+    )
+
+    shuffled = shuffle_quiz_options(quiz, rng=random.Random(7))
+
+    assert [option.option_id for option in shuffled.options] == ["1", "2", "3", "4"]
+    assert {option.text for option in shuffled.options} == {
+        option.text for option in quiz.options
+    }
+    correct_option = next(
+        option
+        for option in shuffled.options
+        if option.option_id == shuffled.correct_answer.option_id
+    )
+    assert correct_option.text == "정답 선택지"
+    assert [option.text for option in shuffled.options] != [
+        option.text for option in quiz.options
+    ]
+
+
+def test_shuffle_quiz_options_preserves_other_fields() -> None:
+    quiz = _quiz("SCENARIO")
+
+    shuffled = shuffle_quiz_options(quiz, rng=random.Random(3))
+
+    assert shuffled.model_dump(exclude={"options", "correct_answer"}) == (
+        quiz.model_dump(exclude={"options", "correct_answer"})
+    )
