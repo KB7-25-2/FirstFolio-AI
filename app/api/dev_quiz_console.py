@@ -57,7 +57,7 @@ h2 { font-size: 16px; margin-top: 2rem; }
 .panel input[type=number] { width: 64px; }
 .panel button { padding: 8px 16px; font-size: 14px; cursor: pointer; }
 .batch { border: 1px solid #c8d8e8; border-radius: 8px; margin-bottom: 12px; background: #f0f6ff; }
-.batch > summary { display: grid; grid-template-columns: 140px 1fr 90px 120px 120px; gap: 8px; align-items: center; cursor: pointer; padding: 10px 14px; font-size: 13px; font-weight: 500; }
+.batch > summary { display: grid; grid-template-columns: 140px 1fr 90px 100px 110px 100px; gap: 8px; align-items: center; cursor: pointer; padding: 10px 14px; font-size: 13px; font-weight: 500; }
 .batch-items { padding: 0 12px 12px; }
 .entry { border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 8px; padding: 4px 12px; background: #fff; }
 .entry summary { display: grid; grid-template-columns: 110px 110px 1fr 80px 170px 80px 1fr; gap: 8px; align-items: center; cursor: pointer; padding: 8px 0; }
@@ -70,6 +70,22 @@ h2 { font-size: 16px; margin-top: 2rem; }
 .detail ul { margin: 4px 0 8px 20px; }
 .detail li.correct { color: #b3261e; }
 .empty { color: #777; }
+.batch-filter { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 10px; }
+.batch-filter label { display: flex; flex-direction: column; font-size: 12px; color: #555; gap: 4px; }
+.batch-filter select { padding: 4px 6px; font-size: 13px; }
+"""
+
+_SCRIPT = """
+function filterBatchItems(batchId) {
+  var type = document.getElementById('qtype-' + batchId).value;
+  var topic = document.getElementById('topic-' + batchId).value;
+  var items = document.getElementById('items-' + batchId).querySelectorAll('.entry');
+  items.forEach(function (item) {
+    var matchesType = !type || item.dataset.questionType === type;
+    var matchesTopic = !topic || item.dataset.topic === topic;
+    item.style.display = (matchesType && matchesTopic) ? '' : 'none';
+  });
+}
 """
 
 
@@ -201,6 +217,7 @@ def _render_page(groups: list[_BatchGroup]) -> str:
 </section>
 <h2>생성 기록</h2>
 {_render_history(groups)}
+<script>{_SCRIPT}</script>
 </body>
 </html>
 """
@@ -226,6 +243,18 @@ def _render_question_type_options() -> str:
     return options
 
 
+def _render_filter_options(values: list[str], selected: str) -> str:
+    all_selected = " selected" if not selected else ""
+    options = f'<option value=""{all_selected}>전체</option>'
+    options += "".join(
+        f'<option value="{html.escape(value)}"'
+        f"{' selected' if value == selected else ''}>"
+        f"{html.escape(value)}</option>"
+        for value in values
+    )
+    return options
+
+
 def _render_history(groups: list[_BatchGroup]) -> str:
     if not groups:
         return '<p class="empty">아직 생성한 문제가 없습니다.</p>'
@@ -240,6 +269,8 @@ def _render_batch_card(group: _BatchGroup) -> str:
     success_rate = round(succeeded / total * 100) if total else 0
     generated_at = datetime.fromtimestamp(group.mtime).strftime("%Y-%m-%d %H:%M")
     cost = _calculate_cost(records)
+    duration = _format_duration(_total_elapsed_ms(records))
+    batch_id = str(group.batch_id)
 
     tone = (
         "success"
@@ -252,13 +283,33 @@ def _render_batch_card(group: _BatchGroup) -> str:
         f'<span class="cell">{total}건 중 {succeeded}건 성공</span>'
         f'<span class="badge tone-{tone}">{success_rate}%</span>'
         f'<span class="cell">{html.escape(cost)}</span>'
+        f'<span class="cell">{html.escape(duration)} 소요</span>'
         f'<span class="cell" style="color:#999;font-size:12px;">▾ 항목 보기</span>'
         "</summary>"
     )
 
+    filter_toolbar = (
+        '<div class="batch-filter">'
+        "<label>유형 필터"
+        f'<select id="qtype-{batch_id}" onchange="filterBatchItems(\'{batch_id}\')">'
+        f"{_render_filter_options(_QUESTION_TYPES, '')}"
+        "</select>"
+        "</label>"
+        "<label>카테고리 필터"
+        f'<select id="topic-{batch_id}" onchange="filterBatchItems(\'{batch_id}\')">'
+        f"{_render_filter_options(_CATEGORIES, '')}"
+        "</select>"
+        "</label>"
+        "</div>"
+    )
+
     items = "".join(_render_entry(group.mtime, record) for record in records)
 
-    return f'<details class="batch">{summary}<div class="batch-items">{items}</div></details>'
+    return (
+        f'<details class="batch">{summary}<div class="batch-items">'
+        f'{filter_toolbar}<div id="items-{batch_id}">{items}</div>'
+        "</div></details>"
+    )
 
 
 def _calculate_cost(records: list[QuizBatchRecord]) -> str:
@@ -273,6 +324,24 @@ def _calculate_cost(records: list[QuizBatchRecord]) -> str:
         return "비용 없음"
 
     return f"약 ${total_usd:.4f}"
+
+
+def _total_elapsed_ms(records: list[QuizBatchRecord]) -> int:
+    return sum(
+        record.result.execution.elapsed_ms
+        for record in records
+        if record.result is not None
+    )
+
+
+def _format_duration(elapsed_ms: int) -> str:
+    total_seconds = elapsed_ms // 1000
+
+    if total_seconds < 60:
+        return f"{total_seconds}초"
+
+    minutes, seconds = divmod(total_seconds, 60)
+    return f"{minutes}분 {seconds}초"
 
 
 def _render_entry(mtime: float, record: QuizBatchRecord) -> str:
@@ -303,7 +372,10 @@ def _render_entry(mtime: float, record: QuizBatchRecord) -> str:
         "</summary>"
     )
 
-    return f'<details class="entry">{summary}{_render_entry_detail(record)}</details>'
+    return (
+        f'<details class="entry" data-question-type="{question_type}" '
+        f'data-topic="{topic}">{summary}{_render_entry_detail(record)}</details>'
+    )
 
 
 def _render_entry_detail(record: QuizBatchRecord) -> str:
