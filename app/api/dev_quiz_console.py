@@ -417,9 +417,7 @@ def _render_quiz_detail(result: QuizGenerationResult) -> str:
     scenario_html = ""
     if quiz.scenario_json is not None:
         s = quiz.scenario_json
-        constraints = "".join(
-            f"<li>{html.escape(c)}</li>" for c in s.constraints
-        )
+        constraints = "".join(f"<li>{html.escape(c)}</li>" for c in s.constraints)
         scenario_html = (
             '<div class="scenario">'
             f"<p><strong>등장인물</strong> {html.escape(s.character)}</p>"
