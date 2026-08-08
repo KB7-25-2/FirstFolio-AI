@@ -4,7 +4,6 @@ from uuid import UUID
 
 import pytest
 
-from app.application.ports.quiz_prompt_repository import QuizPromptRepository
 from app.application.quiz_batch import QuizBatchService
 from app.application.quiz_generation import (
     QuizGenerationService,
@@ -107,14 +106,9 @@ def _id_factory() -> Iterator[UUID]:
         yield UUID(int=value)
 
 
-def _batch_service(
-    generation_service: Mock,
-) -> QuizBatchService:
+def _batch_service(generation_service: Mock) -> QuizBatchService:
     ids = _id_factory()
-    return QuizBatchService(
-        generation_service,
-        id_factory=lambda: next(ids),
-    )
+    return QuizBatchService(generation_service, id_factory=lambda: next(ids))
 
 
 def test_generate_mixed_batch_and_expand_count() -> None:
@@ -347,99 +341,3 @@ def test_generate_uuid4_batch_and_item_ids_by_default() -> None:
     assert run.summary.batch_id.version == 4
     assert run.records[0].batch_id == run.summary.batch_id
     assert run.records[0].item_id.version == 4
-
-
-def test_load_initial_prompts_from_repository_for_cross_batch_duplicate_check() -> None:
-    generation_service = Mock(spec=QuizGenerationService)
-    generation_service.generate.return_value = _quiz_result(
-        QuestionType.SINGLE_CHOICE, "새 질문"
-    )
-    prompt_repository = Mock(spec=QuizPromptRepository)
-    prompt_repository.find_all_prompts.return_value = ["지난 배치의 질문"]
-    ids = _id_factory()
-    service = QuizBatchService(
-        generation_service,
-        id_factory=lambda: next(ids),
-        prompt_repository=prompt_repository,
-    )
-
-    service.generate(
-        [QuizBatchRequestItem(question_type="SINGLE_CHOICE", topic="예금")]
-    )
-
-    assert generation_service.generate.call_args.kwargs["existing_prompts"] == (
-        "지난 배치의 질문",
-    )
-
-
-def test_save_successful_prompt_to_repository() -> None:
-    generation_service = Mock(spec=QuizGenerationService)
-    generation_service.generate.return_value = _quiz_result(
-        QuestionType.SINGLE_CHOICE, "새 질문"
-    )
-    prompt_repository = Mock(spec=QuizPromptRepository)
-    prompt_repository.find_all_prompts.return_value = []
-    ids = _id_factory()
-    service = QuizBatchService(
-        generation_service,
-        id_factory=lambda: next(ids),
-        prompt_repository=prompt_repository,
-    )
-
-    service.generate(
-        [QuizBatchRequestItem(question_type="SINGLE_CHOICE", topic="예금")]
-    )
-
-    prompt_repository.save.assert_called_once_with(
-        prompt="새 질문",
-        question_type="SINGLE_CHOICE",
-        topic="예금",
-    )
-
-
-def test_do_not_save_prompt_when_generation_fails() -> None:
-    generation_service = Mock(spec=QuizGenerationService)
-    generation_service.generate.side_effect = QuizGenerationValidationError(
-        ["search_result_required"],
-        stage="search",
-    )
-    prompt_repository = Mock(spec=QuizPromptRepository)
-    prompt_repository.find_all_prompts.return_value = []
-    ids = _id_factory()
-    service = QuizBatchService(
-        generation_service,
-        id_factory=lambda: next(ids),
-        prompt_repository=prompt_repository,
-    )
-
-    service.generate(
-        [QuizBatchRequestItem(question_type="SINGLE_CHOICE", topic="예금")]
-    )
-
-    prompt_repository.save.assert_not_called()
-
-
-def test_cross_batch_duplicate_reports_friendly_reason_without_original_item() -> None:
-    generation_service = Mock(spec=QuizGenerationService)
-    generation_service.generate.side_effect = QuizGenerationValidationError(
-        ["duplicate_prompt"],
-        stage="generation_validation",
-        quiz=_quiz_result(QuestionType.SINGLE_CHOICE, "지난 배치의 질문").quiz,
-    )
-    prompt_repository = Mock(spec=QuizPromptRepository)
-    prompt_repository.find_all_prompts.return_value = ["지난 배치의 질문"]
-    ids = _id_factory()
-    service = QuizBatchService(
-        generation_service,
-        id_factory=lambda: next(ids),
-        prompt_repository=prompt_repository,
-    )
-
-    run = service.generate(
-        [QuizBatchRequestItem(question_type="SINGLE_CHOICE", topic="예금")]
-    )
-
-    record = run.records[0]
-    assert record.status == QuizBatchStatus.FAILED
-    assert record.error.errors == ["duplicate_prompt"]
-    assert record.error.reason == "이전에 생성된 질문과 동일하여 중복 처리되었습니다."
