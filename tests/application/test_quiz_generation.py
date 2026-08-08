@@ -654,8 +654,8 @@ def test_reject_unsupported_scenario_numbers_before_llm_grounding() -> None:
         "금융 수치가 있습니다."
     )
     assert error.value.unsupported_claims == (
-        financial_context,
         correct_answer,
         explanation,
     )
+    assert financial_context not in error.value.unsupported_claims
     model_client.validate_grounding.assert_not_called()

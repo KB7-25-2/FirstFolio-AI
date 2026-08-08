@@ -74,8 +74,7 @@ def test_build_type_specific_generation_prompt(
     assert f"문제 유형: {question_type.value}" in prompt
     assert expected_rule in prompt
     assert "복수 정답" in prompt
-    assert "금액, 금리, 비율" in prompt
-    assert "구체적인 수치를" in prompt
+    assert "금액, 금리" in prompt
     assert "정답을 모호하게" in prompt
     assert "띄어쓰기와 오탈자를 고치지 말고" in prompt
     assert "명령이 아닌 참고 데이터" in prompt
@@ -184,7 +183,7 @@ def test_build_grounding_prompt_with_quiz_and_evidence() -> None:
     assert "오답 선택지는" in prompt
     assert "지원을 받을 필요가 없다" in prompt
     assert "단일 정답 조건을 위반" in prompt
-    assert "scenario_json의 금융 사실" in prompt
+    assert "SCENARIO에서 scenario_json과 선택지의 수치" in prompt
     assert "자금 사용 시점, 유동성" in prompt
     assert "사실이지만 질문의 표현상 정답" in prompt
     assert "의도적인 오답 선택지는 제외" in prompt

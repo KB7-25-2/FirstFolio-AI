@@ -70,6 +70,7 @@ h2 { font-size: 16px; margin-top: 2rem; }
 .detail { padding: 8px 0 12px; border-top: 1px solid #eee; margin-top: 8px; font-size: 13px; }
 .detail ul { margin: 4px 0 8px 20px; }
 .detail li.correct { color: #b3261e; }
+.scenario { background: #f0f4ff; border-left: 3px solid #4a6fa5; padding: 8px 12px; margin-bottom: 10px; border-radius: 4px; }
 .empty { color: #777; }
 .batch-filter { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 10px; }
 .batch-filter label { display: flex; flex-direction: column; font-size: 12px; color: #555; gap: 4px; }
@@ -413,6 +414,19 @@ def _render_entry_detail(record: QuizBatchRecord) -> str:
 
 def _render_quiz_detail(result: QuizGenerationResult) -> str:
     quiz = result.quiz
+    scenario_html = ""
+    if quiz.scenario_json is not None:
+        s = quiz.scenario_json
+        constraints = "".join(
+            f"<li>{html.escape(c)}</li>" for c in s.constraints
+        )
+        scenario_html = (
+            '<div class="scenario">'
+            f"<p><strong>등장인물</strong> {html.escape(s.character)}</p>"
+            f"<p><strong>상황</strong> {html.escape(s.financial_context)}</p>"
+            f"<p><strong>제약 조건</strong></p><ul>{constraints}</ul>"
+            "</div>"
+        )
     options = "".join(
         (
             '<li class="correct">'
@@ -429,6 +443,7 @@ def _render_quiz_detail(result: QuizGenerationResult) -> str:
 
     return (
         '<div class="detail">'
+        f"{scenario_html}"
         f"<p><strong>질문</strong> {html.escape(quiz.prompt)}</p>"
         f"<ul>{options}</ul>"
         f"<p><strong>해설</strong> {html.escape(quiz.explanation)}</p>"

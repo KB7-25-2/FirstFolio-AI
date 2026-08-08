@@ -40,7 +40,12 @@ _TYPE_RULES = {
         "options는 option_id가 문자열 1, 2, 3, 4인 정확히 네 개로 구성하고 "
         "scenario_json에 character, financial_context, constraints를 모두 작성한다. "
         "정답을 하나로 결정하는 데 필요한 기간, 유동성, 위험 허용 범위 같은 "
-        "조건을 명시하고 조건만으로 최선의 선택을 판단할 수 있게 한다."
+        "조건을 명시하고 조건만으로 최선의 선택을 판단할 수 있게 한다. "
+        "주식·펀드처럼 특정 종목이나 상품을 고르는 문제는 만들지 않는다. "
+        "대신 투자 목적·기간·위험 허용 범위에 따라 어떤 금융상품 유형(주식형·채권형·"
+        "혼합형 펀드, 단기·장기 채권 등)이 적합한지 고르는 문제로 작성한다. "
+        "선택지는 상품 유형의 특성(위험도, 기간, 유동성)으로 구분하고 "
+        "scenario_json의 제약 조건만으로 정답이 하나로 결정될 수 있어야 한다."
     ),
 }
 
@@ -84,9 +89,11 @@ def build_quiz_generation_prompt(
 - 정답은 하나만 허용하며 correct_answer.option_id는 options 중 하나를 참조한다.
 - 복수 정답, 모두 고르시오 유형은 생성하지 않는다.
 - 질문, 정답과 해설은 아래 검색 근거만으로 작성한다.
-- prompt, scenario_json, 정답 선택지와 explanation의 금액, 금리, 비율,
-  날짜와 기간은 검색 근거에 실제로 있는 값만 사용한다.
-- 검색 근거에 없는 구체적인 수치를 시나리오나 선택지에 임의로 만들지 않는다.
+- SCENARIO 이외의 유형에서 prompt, 정답 선택지와 explanation의 금액, 금리,
+  비율, 날짜와 기간은 검색 근거에 실제로 있는 값만 사용한다.
+- SCENARIO에서 scenario_json과 options의 수치(기간, 금리, 금액)는 시나리오
+  설정값으로 검색 근거와 무관하게 작성할 수 있다. 단, 선택지 간 우열이
+  scenario_json의 제약 조건만으로 명확하게 결정되어야 한다.
 - 오답 선택지는 명백히 틀리거나 주어진 조건에 맞지 않게 작성하고,
   사실이지만 질문과 관련이 약한 문장으로 정답을 모호하게 만들지 않는다.
 - citations에는 아래 검색 근거에 실제로 존재하는 chunk_key만 사용한다.
@@ -106,6 +113,16 @@ def build_quiz_generation_prompt(
 
 
 def _grounding_type_rule(quiz: Quiz) -> str:
+    if quiz.question_type == QuestionType.SCENARIO:
+        return (
+            "scenario_json의 제약 조건(기간, 유동성, 위험 허용 범위 등)만으로 "
+            "정답 하나를 논리적으로 결정할 수 있는지 확인한다. "
+            "결정할 수 없으면 supported를 false로 반환한다. "
+            "explanation은 시나리오 제약 조건을 근거로 정답을 설명하는 글이므로 "
+            "검색 근거와 직접 대응하지 않아도 된다. explanation이 검색 근거와 "
+            "명백히 모순되지 않으면 supported를 true로 반환한다."
+        )
+
     if quiz.question_type != QuestionType.TRUE_FALSE:
         return (
             "prompt, correct_answer_option과 explanation의 핵심 주장이 검색 "
@@ -172,13 +189,17 @@ def build_grounding_validation_prompt(
 - TRUE_FALSE에서 correct_answer_option이 X이고 explanation이 근거를 들어
   prompt가 왜 거짓인지 올바르게 설명하면 prompt를 unsupported_claims에
   포함하지 않는다.
-- scenario_json의 금융 사실, 금액, 금리, 비율, 날짜와 기간도 검색 근거로
-  직접 확인되어야 한다. 허구의 인물 설정이라는 이유로 금융 수치를 허용하지 않는다.
+- SCENARIO에서 scenario_json과 선택지의 수치(기간, 금리, 금액)는 시나리오
+  설정값이므로 검색 근거 확인 없이 허용한다.
+- SCENARIO에서 explanation은 시나리오 제약 조건을 근거로 정답을 설명하는 글이므로
+  검색 근거와 직접 대응하지 않아도 된다. 검색 근거와 명백히 모순되지 않으면 허용한다.
+- SCENARIO에서 정답이 scenario_json의 제약 조건(기간, 유동성, 위험 허용 범위 등)
+  으로 논리적으로 결정될 수 있으면 supported를 true로 반환한다.
+- SCENARIO 이외에서 정답 선택지의 구체적인 금액, 금리, 비율과 기간이
+  검색 근거에 없으면 supported를 false로 반환한다.
 - prompt가 가장 유리한 상품이나 최선의 선택을 묻는다면 scenario_json의
   제약 조건만으로 정답 하나를 결정할 수 있어야 한다. 자금 사용 시점, 유동성,
   위험 허용 범위 같은 핵심 조건이 부족하면 supported를 false로 반환한다.
-- 정답 선택지의 구체적인 금액, 금리, 비율과 기간이 검색 근거에 없으면
-  supported를 false로 반환한다.
 - distractor가 사실이지만 질문의 표현상 정답으로도 해석될 수 있거나
   정답과 구별할 기준이 부족하면 단일 정답 조건 위반이다.
 - unsupported_claims에는 prompt, scenario_json, correct_answer_option과
