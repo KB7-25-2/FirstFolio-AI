@@ -604,7 +604,7 @@ def test_reject_when_another_option_can_also_be_correct() -> None:
     assert error.value.unsupported_claims == ()
 
 
-def test_reject_unsupported_scenario_numbers_before_llm_grounding() -> None:
+def test_scenario_passes_numeric_stage_and_reaches_llm_grounding() -> None:
     chunks = _chunks()
     chunks[0] = replace(
         chunks[0],
@@ -613,7 +613,6 @@ def test_reject_unsupported_scenario_numbers_before_llm_grounding() -> None:
             "일반적으로 예치 기간이 길수록 금리가 높아진다."
         ),
     )
-    financial_context = "대학 진학을 위해 100만 원을 저축하려고 한다."
     correct_answer = "5년 후 만기, 이자율 4.0%"
     explanation = "100만 원을 5년 동안 4.0% 금리로 맡기는 것이 가장 유리하다."
     quiz = _quiz(
@@ -621,7 +620,7 @@ def test_reject_unsupported_scenario_numbers_before_llm_grounding() -> None:
         prompt="어떤 정기 예금 상품을 선택해야 할까요?",
         scenario_json={
             "character": "고등학생",
-            "financial_context": financial_context,
+            "financial_context": "대학 진학을 위해 100만 원을 저축하려고 한다.",
             "constraints": ["예치 기간이 1개월 이상 5년 이내"],
         },
         options=[
@@ -641,21 +640,10 @@ def test_reject_unsupported_scenario_numbers_before_llm_grounding() -> None:
     )
     service, model_client, _ = _service(quiz=quiz, chunks=chunks)
 
-    with pytest.raises(QuizGenerationValidationError) as error:
-        service.generate(
-            question_type=QuestionType.SCENARIO,
-            topic="정기 예금 선택 상황",
-        )
+    # SCENARIO는 Stage 2 수치 검사를 건너뛰고 Stage 3 LLM 검증까지 도달해야 한다.
+    service.generate(
+        question_type=QuestionType.SCENARIO,
+        topic="정기 예금 선택 상황",
+    )
 
-    assert error.value.errors == ("grounding_not_supported",)
-    assert error.value.stage == "grounding_validation"
-    assert error.value.reason == (
-        "질문, 시나리오, 정답 선택지 또는 해설에 검색 근거로 확인할 수 없는 "
-        "금융 수치가 있습니다."
-    )
-    assert error.value.unsupported_claims == (
-        correct_answer,
-        explanation,
-    )
-    assert financial_context not in error.value.unsupported_claims
-    model_client.validate_grounding.assert_not_called()
+    model_client.validate_grounding.assert_called_once()
