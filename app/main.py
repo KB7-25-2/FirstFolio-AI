@@ -13,7 +13,9 @@ app.state.settings = settings
 
 app.include_router(health_router)
 
-if settings.app_env == "local":
-    app.state.quiz_generation_service = create_quiz_generation_service(settings)
+if settings.app_env in ("local", "ci"):
     app.include_router(dev_quiz_generations_router)
     app.include_router(dev_quiz_console_router)
+
+if settings.app_env == "local":
+    app.state.quiz_generation_service = create_quiz_generation_service(settings)
