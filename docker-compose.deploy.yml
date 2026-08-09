@@ -1,0 +1,23 @@
+name: firstfolio-ai-deploy
+
+services:
+  ai-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: firstfolio-ai:deploy
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+    ports:
+      - "${APP_PORT:-8000}:${APP_PORT:-8000}"
+    restart: unless-stopped
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "${APP_PORT:-8000}"

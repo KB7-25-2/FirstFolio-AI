@@ -33,6 +33,7 @@ def test_create_mysql_connection_with_settings(
         database="firstfolio_ai_test",
         user="test-user",
         password="test-password",
+        time_zone="+00:00",
         autocommit=False,
     )
 
