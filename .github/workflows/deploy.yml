@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      # 병합 시 아래 한 줄 삭제
+      - feat/aws-deploy-poc
   workflow_dispatch:
 
 permissions:
