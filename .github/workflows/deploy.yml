@@ -64,6 +64,7 @@ jobs:
               \"set -e\",
               \"aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}\",
               \"cd ${APP_DIR}\",
+              \"git pull --ff-only\",
               \"docker compose -f docker-compose.deploy.yml pull\",
               \"docker compose -f docker-compose.deploy.yml up -d\"
             ]" \
