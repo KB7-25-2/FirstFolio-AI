@@ -1,0 +1,19 @@
+name: firstfolio-ai-deploy
+
+services:
+  ai-api:
+    image: 454231081430.dkr.ecr.ap-northeast-2.amazonaws.com/firstfolio-ai:latest
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+    ports:
+      - "${APP_PORT:-8000}:${APP_PORT:-8000}"
+    restart: unless-stopped
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "${APP_PORT:-8000}"
