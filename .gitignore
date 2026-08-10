@@ -14,6 +14,14 @@ htmlcov/
 
 # Local environment variables
 .env
+.env.*
+!.env.example
+
+# Credentials and service account keys
+*firebase*.json
+*service-account*.json
+*.pem
+*.key
 
 # IDE and operating system
 .idea/

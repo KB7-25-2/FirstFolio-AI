@@ -1,3 +1,4 @@
+import random
 from dataclasses import replace
 
 import pytest
@@ -6,6 +7,7 @@ from app.application.quiz_validation import (
     align_quiz_citation_evidence,
     find_unsupported_numeric_claims,
     normalize_quiz_prompt,
+    shuffle_quiz_options,
     validate_quiz_rules,
 )
 from app.domain.chunk import DocumentChunk
@@ -374,9 +376,7 @@ def test_do_not_mark_different_prompt_as_duplicate() -> None:
     assert "duplicate_prompt" not in result.errors
 
 
-def test_find_unsupported_numeric_claims_in_scenario_correct_answer_and_explanation() -> (
-    None
-):
+def test_scenario_skips_all_numeric_check() -> None:
     chunks = _chunks()
     chunks[0] = replace(
         chunks[0],
@@ -392,7 +392,7 @@ def test_find_unsupported_numeric_claims_in_scenario_correct_answer_and_explanat
     explanation = "100만 원을 5년 동안 4.0% 금리로 맡기는 것이 가장 유리하다."
     quiz = _quiz(
         "SCENARIO",
-        prompt="어떤 정기 예금 상품을 선택해야 할까요?",
+        prompt="5년 안에 어떤 정기 예금 상품을 선택해야 할까요?",
         scenario_json={
             "character": "고등학생",
             "financial_context": financial_context,
@@ -413,13 +413,8 @@ def test_find_unsupported_numeric_claims_in_scenario_correct_answer_and_explanat
 
     unsupported_claims = find_unsupported_numeric_claims(quiz, chunks)
 
-    assert unsupported_claims == (
-        financial_context,
-        correct_answer,
-        explanation,
-    )
-    assert quiz.scenario_json.constraints[0] not in unsupported_claims
-    assert quiz.options[0].text not in unsupported_claims
+    # SCENARIO는 prompt·선택지·해설 수치를 모두 검사하지 않으므로 항상 빈 튜플
+    assert unsupported_claims == ()
 
 
 def test_accept_numeric_claims_present_in_evidence() -> None:
@@ -434,3 +429,50 @@ def test_accept_numeric_claims_present_in_evidence() -> None:
     )
 
     assert find_unsupported_numeric_claims(quiz, chunks) == ()
+
+
+def test_shuffle_quiz_options_keeps_true_false_unchanged() -> None:
+    quiz = _quiz("TRUE_FALSE")
+
+    shuffled = shuffle_quiz_options(quiz, rng=random.Random(1))
+
+    assert shuffled == quiz
+
+
+def test_shuffle_quiz_options_reorders_and_tracks_correct_answer() -> None:
+    quiz = _quiz(
+        "SINGLE_CHOICE",
+        options=[
+            {"option_id": "1", "text": "정답 선택지"},
+            {"option_id": "2", "text": "오답 선택지 2"},
+            {"option_id": "3", "text": "오답 선택지 3"},
+            {"option_id": "4", "text": "오답 선택지 4"},
+        ],
+        correct_answer={"option_id": "1"},
+    )
+
+    shuffled = shuffle_quiz_options(quiz, rng=random.Random(7))
+
+    assert [option.option_id for option in shuffled.options] == ["1", "2", "3", "4"]
+    assert {option.text for option in shuffled.options} == {
+        option.text for option in quiz.options
+    }
+    correct_option = next(
+        option
+        for option in shuffled.options
+        if option.option_id == shuffled.correct_answer.option_id
+    )
+    assert correct_option.text == "정답 선택지"
+    assert [option.text for option in shuffled.options] != [
+        option.text for option in quiz.options
+    ]
+
+
+def test_shuffle_quiz_options_preserves_other_fields() -> None:
+    quiz = _quiz("SCENARIO")
+
+    shuffled = shuffle_quiz_options(quiz, rng=random.Random(3))
+
+    assert shuffled.model_dump(exclude={"options", "correct_answer"}) == (
+        quiz.model_dump(exclude={"options", "correct_answer"})
+    )

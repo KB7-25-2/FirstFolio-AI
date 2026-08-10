@@ -9,7 +9,6 @@ from app.application.quiz_generation import (
     QuizGenerationValidationError,
 )
 from app.domain.quiz import QuestionType, QuizGenerationResult
-from app.quiz_mvp import create_quiz_generation_service
 
 router = APIRouter(
     prefix="/api/v1/dev",
@@ -30,7 +29,7 @@ class QuizGenerationRequest(BaseModel):
 def get_quiz_generation_service(
     request: Request,
 ) -> QuizGenerationService:
-    return create_quiz_generation_service(request.app.state.settings)
+    return request.app.state.quiz_generation_service
 
 
 @router.post(

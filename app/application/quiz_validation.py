@@ -1,10 +1,11 @@
+import random
 import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from app.domain.chunk import DocumentChunk
-from app.domain.quiz import QuestionType, Quiz, UsageType
+from app.domain.quiz import QuestionType, Quiz, QuizAnswer, QuizOption, UsageType
 
 _NUMERIC_FINANCIAL_CLAIM_PATTERN = re.compile(
     r"(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*"
@@ -53,16 +54,12 @@ def find_unsupported_numeric_claims(
 
 
 def _numeric_grounding_targets(quiz: Quiz) -> tuple[str, ...]:
-    targets = [quiz.prompt]
+    # SCENARIO는 prompt·선택지·해설 수치가 모두 시나리오 설정값이므로 검사하지 않는다.
+    # 거짓 수치 방어는 LLM grounding validation(stage 3)이 담당한다.
+    if quiz.question_type == QuestionType.SCENARIO:
+        return ()
 
-    if quiz.scenario_json is not None:
-        targets.extend(
-            [
-                quiz.scenario_json.character,
-                quiz.scenario_json.financial_context,
-                *quiz.scenario_json.constraints,
-            ]
-        )
+    targets = [quiz.prompt]
 
     correct_answer_option = next(
         (
@@ -86,6 +83,40 @@ def _normalize_numeric_claim(claim: str) -> str:
         character
         for character in normalized
         if not character.isspace() and character != ","
+    )
+
+
+def shuffle_quiz_options(
+    quiz: Quiz,
+    rng: random.Random | None = None,
+) -> Quiz:
+    if quiz.question_type == QuestionType.TRUE_FALSE:
+        return quiz
+
+    rng = rng or random.Random()
+    target_option_ids = [option.option_id for option in quiz.options]
+    shuffled_source_options = list(quiz.options)
+    rng.shuffle(shuffled_source_options)
+
+    shuffled_options = [
+        QuizOption(option_id=new_id, text=source_option.text)
+        for new_id, source_option in zip(
+            target_option_ids, shuffled_source_options, strict=True
+        )
+    ]
+    new_correct_option_id = next(
+        new_option.option_id
+        for new_option, source_option in zip(
+            shuffled_options, shuffled_source_options, strict=True
+        )
+        if source_option.option_id == quiz.correct_answer.option_id
+    )
+
+    return quiz.model_copy(
+        update={
+            "options": shuffled_options,
+            "correct_answer": QuizAnswer(option_id=new_correct_option_id),
+        }
     )
 
 

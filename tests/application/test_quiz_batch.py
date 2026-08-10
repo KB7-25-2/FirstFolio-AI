@@ -106,14 +106,9 @@ def _id_factory() -> Iterator[UUID]:
         yield UUID(int=value)
 
 
-def _batch_service(
-    generation_service: Mock,
-) -> QuizBatchService:
+def _batch_service(generation_service: Mock) -> QuizBatchService:
     ids = _id_factory()
-    return QuizBatchService(
-        generation_service,
-        id_factory=lambda: next(ids),
-    )
+    return QuizBatchService(generation_service, id_factory=lambda: next(ids))
 
 
 def test_generate_mixed_batch_and_expand_count() -> None:

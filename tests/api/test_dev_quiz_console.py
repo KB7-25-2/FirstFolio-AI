@@ -6,7 +6,12 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.dev_quiz_console import _BatchGroup, _read_history, get_quiz_batch_service
+from app.api.dev_quiz_console import (
+    _BatchGroup,
+    _format_duration,
+    _read_history,
+    get_quiz_batch_service,
+)
 from app.application.quiz_batch import QuizBatchRun, QuizBatchService
 from app.domain.quiz import (
     QuizBatchError,
@@ -67,12 +72,15 @@ def _quiz_generation_result() -> QuizGenerationResult:
     )
 
 
-def _succeeded_record(topic: str = "예금의 특징") -> QuizBatchRecord:
+def _succeeded_record(
+    topic: str = "예금의 특징",
+    question_type: str = "SINGLE_CHOICE",
+) -> QuizBatchRecord:
     return QuizBatchRecord(
         batch_id=uuid4(),
         item_id=uuid4(),
         status=QuizBatchStatus.SUCCEEDED,
-        input=QuizBatchItemInput(question_type="SINGLE_CHOICE", topic=topic),
+        input=QuizBatchItemInput(question_type=question_type, topic=topic),
         result=_quiz_generation_result(),
         error=None,
         duplicate=None,
@@ -128,6 +136,14 @@ def test_read_history_skips_blank_lines(tmp_path: Path) -> None:
 
     assert len(groups) == 1
     assert len(groups[0].records) == 1
+
+
+def test_format_duration_under_a_minute() -> None:
+    assert _format_duration(45_000) == "45초"
+
+
+def test_format_duration_over_a_minute() -> None:
+    assert _format_duration(222_000) == "3분 42초"
 
 
 @pytest.fixture
@@ -206,6 +222,34 @@ def test_render_quiz_console_shows_metrics_and_status_badges(
     assert "성공" in response.text
     assert "실패" in response.text
     assert "지원하지 않는 문제 유형입니다." in response.text
+
+
+def test_render_quiz_console_includes_per_batch_filter_toggle(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    history_directory = tmp_path / "history"
+    history_directory.mkdir()
+    record_a = _succeeded_record(topic="채권", question_type="TRUE_FALSE")
+    record_b = _succeeded_record(topic="주식", question_type="SINGLE_CHOICE")
+    lines = [record_a.model_dump_json(), record_b.model_dump_json()]
+    (history_directory / "batch.jsonl").write_text("\n".join(lines) + "\n")
+    monkeypatch.setattr(
+        "app.api.dev_quiz_console._HISTORY_DIRECTORY",
+        history_directory,
+    )
+    batch_id = str(record_a.batch_id)
+
+    response = client.get("/api/v1/dev/quiz-console")
+
+    assert response.status_code == 200
+    assert f'id="qtype-{batch_id}"' in response.text
+    assert f'id="topic-{batch_id}"' in response.text
+    assert f'id="items-{batch_id}"' in response.text
+    assert 'data-question-type="TRUE_FALSE" data-topic="채권"' in response.text
+    assert 'data-question-type="SINGLE_CHOICE" data-topic="주식"' in response.text
+    assert "function filterBatchItems" in response.text
 
 
 def test_generate_from_console_writes_history_and_redirects(

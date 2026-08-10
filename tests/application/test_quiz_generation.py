@@ -1,3 +1,4 @@
+import random
 from dataclasses import replace
 from unittest.mock import Mock
 
@@ -95,6 +96,7 @@ def _service(
     chunks: list[DocumentChunk] | None = None,
     search_results: list[SearchResult] | None = None,
     supported: bool = True,
+    rng: random.Random | None = None,
 ) -> tuple[
     QuizGenerationService,
     Mock,
@@ -134,6 +136,7 @@ def _service(
         hybrid_search=hybrid_search,
         chunk_repository=repository,
         model_client=model_client,
+        rng=rng,
     )
     return service, model_client, repository
 
@@ -300,6 +303,28 @@ def test_generate_valid_quiz_result(
     generation_prompt = model_client.generate_quiz.call_args.args[0]
     assert 'chunk_key="47:4"' in generation_prompt
     assert 'chunk_key="47:5"' not in generation_prompt
+
+
+@pytest.mark.parametrize(
+    ("seed", "expected_target"),
+    [(0, "X"), (1, "O")],
+)
+def test_generate_true_false_quiz_requests_random_target_answer(
+    seed: int,
+    expected_target: str,
+) -> None:
+    service, model_client, _ = _service(
+        quiz=_quiz(QuestionType.TRUE_FALSE),
+        rng=random.Random(seed),
+    )
+
+    service.generate(
+        question_type=QuestionType.TRUE_FALSE,
+        topic="예금",
+    )
+
+    generation_prompt = model_client.generate_quiz.call_args.args[0]
+    assert f'correct_answer.option_id는 반드시 "{expected_target}"' in generation_prompt
 
 
 def test_stop_before_generation_without_search_result() -> None:
@@ -526,7 +551,23 @@ def test_accept_actual_fixture_when_only_incorrect_distractors_lack_support(
     )
 
     assert result.validation.grounded is True
-    assert result.quiz == quiz
+    assert result.quiz.model_dump(exclude={"options", "correct_answer"}) == (
+        quiz.model_dump(exclude={"options", "correct_answer"})
+    )
+    assert {option.text for option in result.quiz.options} == {
+        option.text for option in quiz.options
+    }
+    result_correct_option = next(
+        option
+        for option in result.quiz.options
+        if option.option_id == result.quiz.correct_answer.option_id
+    )
+    original_correct_option = next(
+        option
+        for option in quiz.options
+        if option.option_id == quiz.correct_answer.option_id
+    )
+    assert result_correct_option.text == original_correct_option.text
     grounding_prompt = model_client.validate_grounding.call_args.args[0]
     assert "오답 선택지가 검색 근거에서 지원되지 않는다는" in grounding_prompt
 
@@ -563,7 +604,7 @@ def test_reject_when_another_option_can_also_be_correct() -> None:
     assert error.value.unsupported_claims == ()
 
 
-def test_reject_unsupported_scenario_numbers_before_llm_grounding() -> None:
+def test_scenario_skips_numeric_check_and_proceeds_to_llm_grounding() -> None:
     chunks = _chunks()
     chunks[0] = replace(
         chunks[0],
@@ -572,25 +613,22 @@ def test_reject_unsupported_scenario_numbers_before_llm_grounding() -> None:
             "일반적으로 예치 기간이 길수록 금리가 높아진다."
         ),
     )
-    financial_context = "대학 진학을 위해 100만 원을 저축하려고 한다."
-    correct_answer = "5년 후 만기, 이자율 4.0%"
-    explanation = "100만 원을 5년 동안 4.0% 금리로 맡기는 것이 가장 유리하다."
     quiz = _quiz(
         QuestionType.SCENARIO,
         prompt="어떤 정기 예금 상품을 선택해야 할까요?",
         scenario_json={
             "character": "고등학생",
-            "financial_context": financial_context,
+            "financial_context": "대학 진학을 위해 100만 원을 저축하려고 한다.",
             "constraints": ["예치 기간이 1개월 이상 5년 이내"],
         },
         options=[
             {"option_id": "1", "text": "1개월 후 만기, 이자율 1.5%"},
             {"option_id": "2", "text": "1년 후 만기, 이자율 2.0%"},
             {"option_id": "3", "text": "3년 후 만기, 이자율 3.5%"},
-            {"option_id": "4", "text": correct_answer},
+            {"option_id": "4", "text": "5년 후 만기, 이자율 4.0%"},
         ],
         correct_answer={"option_id": "4"},
-        explanation=explanation,
+        explanation="100만 원을 5년 동안 4.0% 금리로 맡기는 것이 가장 유리하다.",
         citations=[
             {
                 "chunk_key": "47:0",
@@ -600,21 +638,10 @@ def test_reject_unsupported_scenario_numbers_before_llm_grounding() -> None:
     )
     service, model_client, _ = _service(quiz=quiz, chunks=chunks)
 
-    with pytest.raises(QuizGenerationValidationError) as error:
-        service.generate(
-            question_type=QuestionType.SCENARIO,
-            topic="정기 예금 선택 상황",
-        )
+    result = service.generate(
+        question_type=QuestionType.SCENARIO,
+        topic="정기 예금 선택 상황",
+    )
 
-    assert error.value.errors == ("grounding_not_supported",)
-    assert error.value.stage == "grounding_validation"
-    assert error.value.reason == (
-        "질문, 시나리오, 정답 선택지 또는 해설에 검색 근거로 확인할 수 없는 "
-        "금융 수치가 있습니다."
-    )
-    assert error.value.unsupported_claims == (
-        financial_context,
-        correct_answer,
-        explanation,
-    )
-    model_client.validate_grounding.assert_not_called()
+    assert result.validation.grounded is True
+    model_client.validate_grounding.assert_called_once()
