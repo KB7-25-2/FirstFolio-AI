@@ -1,0 +1,97 @@
+name: Deploy
+
+on:
+  # 테스트 후 제거 예정
+  push:
+    branches:
+      - feat/aws-deploy-poc
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-ai
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: firstfolio-ai
+  INSTANCE_ID: i-09e5c867743ce4532
+  APP_DIR: /home/ssm-user/FirstFolio-AI
+
+jobs:
+  deploy:
+    name: Build ARM image and deploy to EC2
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::454231081430:role/github-actions-ecr-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to EC2 via SSM
+        run: |
+          set -e
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${INSTANCE_ID}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy ${GITHUB_SHA::7}" \
+            --parameters commands="[
+              \"set -e\",
+              \"aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}\",
+              \"cd ${APP_DIR}\",
+              \"docker compose -f docker-compose.deploy.yml pull\",
+              \"docker compose -f docker-compose.deploy.yml up -d\"
+            ]" \
+            --query "Command.CommandId" --output text)
+
+          echo "명령 ID: $CMD_ID"
+
+          aws ssm wait command-executed \
+            --command-id "$CMD_ID" \
+            --instance-id "${INSTANCE_ID}" || true
+
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id "${INSTANCE_ID}" \
+            --query "Status" --output text)
+
+          echo "=== 서버 출력 ==="
+          aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id "${INSTANCE_ID}" \
+            --query "StandardOutputContent" --output text
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "=== 에러 출력 ==="
+            aws ssm get-command-invocation \
+              --command-id "$CMD_ID" \
+              --instance-id "${INSTANCE_ID}" \
+              --query "StandardErrorContent" --output text
+            echo "배포 실패: $STATUS"
+            exit 1
+          fi

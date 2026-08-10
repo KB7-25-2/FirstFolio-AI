@@ -2,11 +2,7 @@ name: firstfolio-ai-deploy
 
 services:
   ai-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: production
-    image: firstfolio-ai:deploy
+    image: 454231081430.dkr.ecr.ap-northeast-2.amazonaws.com/firstfolio-ai:latest
     env_file:
       - .env
     environment:
