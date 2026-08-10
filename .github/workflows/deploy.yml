@@ -1,10 +1,9 @@
 name: Deploy
 
 on:
-  # 테스트 후 제거 예정
   push:
     branches:
-      - feat/aws-deploy-poc
+      - main
   workflow_dispatch:
 
 permissions:
