@@ -38,9 +38,21 @@ def _quiz_payload(
     if question_type == "SCENARIO":
         usage_type = "MAIN_CHAPTER"
         scenario_json = {
-            "character": "안정적인 저축을 원하는 학생",
-            "financial_context": "매달 용돈을 받고 있다.",
+            "title": "금융상품 선택",
+            "narrative": "안정적인 저축을 원하는 학생이 매달 용돈을 받고 있다.",
+            "persona": {"name": "민서", "age": "18세", "job": "고등학생"},
+            "requirements": {
+                "assets": "매달 받는 용돈",
+                "risk": "원금 손실을 피하고 싶음",
+                "goal": "안정적으로 저축하기",
+            },
+            "market": {
+                "title": "시장 정보",
+                "reference_at": "2026-08-10T00:00:00Z",
+                "bullets": ["검증된 시장 정보"],
+            },
             "constraints": ["원금 손실을 피해야 한다."],
+            "paper_title": "선택 보고서",
         }
 
     return {
@@ -230,9 +242,21 @@ def test_reject_blank_explanation() -> None:
         (
             "SINGLE_CHOICE",
             {
-                "character": "학생",
-                "financial_context": "용돈을 받고 있다.",
+                "title": "금융상품 선택",
+                "narrative": "학생이 용돈을 받고 있다.",
+                "persona": {"name": "민서", "age": "18세", "job": "고등학생"},
+                "requirements": {
+                    "assets": "매달 받는 용돈",
+                    "risk": "원금 손실을 피하고 싶음",
+                    "goal": "안정적으로 저축하기",
+                },
+                "market": {
+                    "title": "시장 정보",
+                    "reference_at": "2026-08-10T00:00:00Z",
+                    "bullets": ["검증된 시장 정보"],
+                },
                 "constraints": [],
+                "paper_title": "선택 보고서",
             },
             "scenario_not_allowed",
         ),
@@ -385,8 +409,8 @@ def test_scenario_skips_all_numeric_check() -> None:
             "일반적으로 예치 기간이 길수록 금리가 높아진다."
         ),
     )
-    financial_context = (
-        "대학 진학을 위해 100만 원을 저축하려고 하며 상품마다 만기가 다르다."
+    narrative = (
+        "고등학생이 대학 진학을 위해 100만 원을 저축하려고 하며 상품마다 만기가 다르다."
     )
     correct_answer = "5년 후 만기, 이자율 4.0%"
     explanation = "100만 원을 5년 동안 4.0% 금리로 맡기는 것이 가장 유리하다."
@@ -394,12 +418,24 @@ def test_scenario_skips_all_numeric_check() -> None:
         "SCENARIO",
         prompt="5년 안에 어떤 정기 예금 상품을 선택해야 할까요?",
         scenario_json={
-            "character": "고등학생",
-            "financial_context": financial_context,
+            "title": "정기 예금 선택",
+            "narrative": narrative,
+            "persona": {"name": "민서", "age": "18세", "job": "고등학생"},
+            "requirements": {
+                "assets": "저축 자금 100만 원",
+                "risk": "원금 손실을 피하고 싶음",
+                "goal": "대학 진학 자금 마련",
+            },
+            "market": {
+                "title": "시장 정보",
+                "reference_at": "2026-08-10T00:00:00Z",
+                "bullets": ["검증된 시장 정보"],
+            },
             "constraints": [
                 "예치 기간이 1개월 이상 5년 이내",
                 "중도 해지할 경우 낮은 금리 적용",
             ],
+            "paper_title": "선택 보고서",
         },
         options=[
             {"option_id": "1", "text": "1개월 후 만기, 이자율 1.5%"},
