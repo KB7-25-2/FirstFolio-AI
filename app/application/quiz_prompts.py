@@ -38,9 +38,14 @@ _TYPE_RULES = {
     ),
     QuestionType.SCENARIO: (
         "options는 option_id가 문자열 1, 2, 3, 4인 정확히 네 개로 구성하고 "
-        "scenario_json에 character, financial_context, constraints를 모두 작성한다. "
-        "정답을 하나로 결정하는 데 필요한 기간, 유동성, 위험 허용 범위 같은 "
-        "조건을 명시하고 조건만으로 최선의 선택을 판단할 수 있게 한다. "
+        "scenario_json에 title, narrative, persona(name, age, job), "
+        "requirements(assets, risk, goal), market(title, reference_at, bullets), "
+        "constraints, paper_title을 모두 작성한다. persona는 가상 인물의 이름·나이·"
+        "직업이고, requirements는 그 인물의 보유 자산·위험 허용도·목표이며, market은 "
+        "판단에 참고할 시장 정보의 제목·기준 시점·핵심 항목이다. constraints에는 "
+        "정답을 하나로 결정하는 데 필요한 기간, 유동성, 위험 허용 범위 같은 조건을 "
+        "명시하고 조건만으로 최선의 선택을 판단할 수 있게 한다. paper_title은 이 "
+        "시나리오를 요약하는 짧은 보고서 제목이다. "
         "주식·펀드처럼 특정 종목이나 상품을 고르는 문제는 만들지 않는다. "
         "대신 투자 목적·기간·위험 허용 범위에 따라 어떤 금융상품 유형(주식형·채권형·"
         "혼합형 펀드, 단기·장기 채권 등)이 적합한지 고르는 문제로 작성한다. "
