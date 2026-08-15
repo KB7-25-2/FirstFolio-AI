@@ -124,6 +124,8 @@ class QuizBatchItemInput(BaseModel):
 
     question_type: str
     topic: str
+    main_chapter_id: int | None = None
+    sub_chapter_id: int | None = None
 
 
 class QuizBatchRequestItem(QuizBatchItemInput):
