@@ -229,3 +229,24 @@ class QuizGenerationTargets(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     main_chapters: list[MainChapterTarget]
+
+
+class BeBatchItemResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: UUID
+    result: str
+    question_id: int | None = None
+    status: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+class BeBatchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    batch_id: UUID
+    total: int = Field(ge=0)
+    accepted: int = Field(ge=0)
+    rejected: int = Field(ge=0)
+    items: list[BeBatchItemResult]

@@ -1,11 +1,15 @@
+from collections.abc import Sequence
+from uuid import UUID
+
 import httpx
 
-from app.domain.quiz import QuizGenerationTargets
+from app.domain.quiz import BeBatchResponse, QuizGenerationTargets
 
 _TARGETS_PATH = "/api/internal/quiz-generation-targets"
+_BATCHES_PATH = "/api/internal/quiz-questions/batches"
 
 
-class SpringQuizTargetClient:
+class SpringQuizApiClient:
     def __init__(
         self,
         base_url: str,
@@ -25,3 +29,16 @@ class SpringQuizTargetClient:
         response.raise_for_status()
         payload = response.json()
         return QuizGenerationTargets.model_validate(payload["data"])
+
+    def send_batch(
+        self,
+        batch_id: UUID,
+        items: Sequence[dict[str, object]],
+    ) -> BeBatchResponse:
+        response = self._client.post(
+            _BATCHES_PATH,
+            json={"batch_id": str(batch_id), "items": list(items)},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return BeBatchResponse.model_validate(payload["data"])
