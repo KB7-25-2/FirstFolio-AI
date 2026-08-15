@@ -199,3 +199,31 @@ class QuizBatchSummary(BaseModel):
     failed: int = Field(ge=0)
     duplicates: int = Field(ge=0)
     output_path: str | None = None
+
+
+class ChapterType(StrEnum):
+    FOUNDATION = "FOUNDATION"
+    ASSET = "ASSET"
+
+
+class SubChapterTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sub_chapter_id: int = Field(ge=1)
+    main_chapter_id: int = Field(ge=1)
+    title: str = Field(min_length=1)
+
+
+class MainChapterTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    main_chapter_id: int = Field(ge=1)
+    title: str = Field(min_length=1)
+    chapter_type: ChapterType
+    sub_chapters: list[SubChapterTarget]
+
+
+class QuizGenerationTargets(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    main_chapters: list[MainChapterTarget]
