@@ -1,4 +1,4 @@
-from app.domain.quiz import QuestionType, QuizBatchRecord, QuizBatchStatus
+from app.domain.quiz import QuizBatchRecord, QuizBatchStatus
 
 
 class QuizExportError(ValueError):
@@ -18,10 +18,11 @@ def to_be_quiz_payload(record: QuizBatchRecord) -> dict[str, object]:
 
     quiz = record.result.quiz
 
-    if quiz.question_type == QuestionType.SCENARIO:
-        raise QuizExportError(
-            "SCENARIO 유형은 아직 BE 전송을 지원하지 않습니다 (scenario_json 구조 미대응)."
-        )
+    scenario_json = (
+        quiz.scenario_json.model_dump(mode="json")
+        if quiz.scenario_json is not None
+        else None
+    )
 
     return {
         "usage_type": quiz.usage_type.value,
@@ -30,7 +31,7 @@ def to_be_quiz_payload(record: QuizBatchRecord) -> dict[str, object]:
         "question_type": quiz.question_type.value,
         "difficulty": quiz.difficulty.value,
         "prompt": quiz.prompt,
-        "scenario_json": None,
+        "scenario_json": scenario_json,
         "options_json": [
             {"key": option.option_id, "label": option.text} for option in quiz.options
         ],
