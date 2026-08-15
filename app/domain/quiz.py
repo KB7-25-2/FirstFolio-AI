@@ -124,6 +124,8 @@ class QuizBatchItemInput(BaseModel):
 
     question_type: str
     topic: str
+    main_chapter_id: int | None = None
+    sub_chapter_id: int | None = None
 
 
 class QuizBatchRequestItem(QuizBatchItemInput):
@@ -199,3 +201,52 @@ class QuizBatchSummary(BaseModel):
     failed: int = Field(ge=0)
     duplicates: int = Field(ge=0)
     output_path: str | None = None
+
+
+class ChapterType(StrEnum):
+    FOUNDATION = "FOUNDATION"
+    ASSET = "ASSET"
+
+
+class SubChapterTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sub_chapter_id: int = Field(ge=1)
+    main_chapter_id: int = Field(ge=1)
+    title: str = Field(min_length=1)
+
+
+class MainChapterTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    main_chapter_id: int = Field(ge=1)
+    title: str = Field(min_length=1)
+    chapter_type: ChapterType
+    sub_chapters: list[SubChapterTarget]
+
+
+class QuizGenerationTargets(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    main_chapters: list[MainChapterTarget]
+
+
+class BeBatchItemResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: UUID
+    result: str
+    question_id: int | None = None
+    status: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+class BeBatchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    batch_id: UUID
+    total: int = Field(ge=0)
+    accepted: int = Field(ge=0)
+    rejected: int = Field(ge=0)
+    items: list[BeBatchItemResult]

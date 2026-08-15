@@ -4,11 +4,11 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.application.quiz_batch import QuizBatchRun, QuizBatchService
 from app.core.config import Settings
-from app.domain.quiz import QuizBatchInput, QuizBatchRecord, QuizBatchSummary
+from app.domain.quiz import QuizBatchInput, QuizBatchSummary
 from app.quiz_mvp import create_quiz_generation_service
 
 _DEFAULT_OUTPUT_DIRECTORY = Path("data/local/quiz-generation-batches")
@@ -21,7 +21,7 @@ def load_batch_input(input_path: Path) -> QuizBatchInput:
 
 def write_jsonl(
     output_path: Path,
-    records: Sequence[QuizBatchRecord],
+    records: Sequence[BaseModel],
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
