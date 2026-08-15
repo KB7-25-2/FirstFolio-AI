@@ -256,25 +256,31 @@ data/local/quiz-generation-batches/{batch_id}.jsonl
 않으며 자동 재시도와 병렬 처리는 하지 않습니다. JSONL은 로컬 검수
 산출물이며 Spring 메인 DB의 최종 저장 데이터가 아닙니다.
 
-## AI–Spring 퀴즈 전달 계약
+## AI–Spring 퀴즈 생성 대상 조회·전달 계약
 
-퀴즈 배치 수신 API의 표기 경로와 실제 호출 경로는 다음과 같습니다.
+AI는 사용자의 개인 커리큘럼과 무관하게 현재 서비스 중인 전체 대·소단원을
+조회한 뒤, 각 단원용 퀴즈를 생성해 Spring에 전달합니다.
 
 ```text
-API 명세: POST /internal/quiz-questions/batches
-실제 호출: POST /api/internal/quiz-questions/batches
+생성 대상 조회: GET /api/internal/quiz-generation-targets
+퀴즈 배치 전달: POST /api/internal/quiz-questions/batches
 ```
 
 - 요청당 1~100개 항목
 - `batch_id`·`item_id`는 UUID
 - 자동 검증을 통과한 퀴즈만 전달
-- Spring은 단원을 매핑하고 최초 상태를 `REVIEW`로 저장
-- 로컬·Mock·통합 테스트는 인증 생략
-- 운영 연동에서 `X-Internal-API-Key` 적용
+- AI 배치 코드가 조회 응답의 `main_chapter_id`·`sub_chapter_id`를 문항에 연결
+- Spring은 단원 ID와 부모·자식 관계를 검증하고 `REVIEW` 상태로 저장
+- 관리자 페이지의 배치 일괄 승인 또는 개별 승인 시 `PUBLISHED`로 전환
+- 랜덤 출제 조회는 `PUBLISHED` 상태만 대상으로 함
+- 로컬을 포함한 서버 간 요청에 `X-Internal-Token` 사용
+- 서버 환경변수는 `INTERNAL_CALL_TOKEN`으로 통일
+- MVP에서는 출처를 전송하지 않으며 AI·HUMAN 모두 `source_refs_json=null` 허용
+- 출처 컬럼은 뉴스 도메인 등 향후 확장을 위해 유지
 
 상세 문서:
 
-- [AI–Spring 퀴즈 배치 전달 API](docs/api/quiz-question-batch-api.md)
+- [AI–Spring 퀴즈 생성 대상 조회·배치 전달 API](docs/api/quiz-question-batch-api.md)
 - [AI 퀴즈 JSON–BE ERD 매핑과 영향 검토](docs/erd/ai-quiz-question-mapping.md)
 
 ## 프로젝트 구조
