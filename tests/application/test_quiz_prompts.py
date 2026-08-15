@@ -56,7 +56,7 @@ def _quiz() -> Quiz:
     [
         (QuestionType.TRUE_FALSE, "SUB_CHAPTER", '"option_id":"O","text":"O"'),
         (QuestionType.SINGLE_CHOICE, "SUB_CHAPTER", "문자열 1, 2, 3, 4"),
-        (QuestionType.SCENARIO, "MAIN_CHAPTER", "character"),
+        (QuestionType.SCENARIO, "MAIN_CHAPTER", "persona"),
     ],
 )
 def test_build_type_specific_generation_prompt(

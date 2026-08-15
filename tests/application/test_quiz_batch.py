@@ -54,9 +54,21 @@ def _quiz_result(
     if question_type == QuestionType.SCENARIO:
         usage_type = "MAIN_CHAPTER"
         scenario_json = {
-            "character": "저축을 계획하는 학생",
-            "financial_context": "일정한 용돈을 받고 있다.",
+            "title": "금융상품 선택",
+            "narrative": "저축을 계획하는 학생이 일정한 용돈을 받고 있다.",
+            "persona": {"name": "민서", "age": "18세", "job": "고등학생"},
+            "requirements": {
+                "assets": "매달 받는 용돈",
+                "risk": "원금 손실을 피하고 싶음",
+                "goal": "안정적으로 저축하기",
+            },
+            "market": {
+                "title": "시장 정보",
+                "reference_at": "2026-08-10T00:00:00Z",
+                "bullets": ["검증된 시장 정보"],
+            },
             "constraints": ["원금 손실을 피해야 한다."],
+            "paper_title": "선택 보고서",
         }
 
     return QuizGenerationResult(
