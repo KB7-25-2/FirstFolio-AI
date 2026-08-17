@@ -15,8 +15,10 @@ class SpringQuizApiClient:
         base_url: str,
         internal_token: str,
         timeout_seconds: float = 10.0,
+        batch_timeout_seconds: float = 60.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
+        self._batch_timeout_seconds = batch_timeout_seconds
         self._client = httpx.Client(
             base_url=base_url,
             timeout=timeout_seconds,
@@ -38,6 +40,7 @@ class SpringQuizApiClient:
         response = self._client.post(
             _BATCHES_PATH,
             json={"batch_id": str(batch_id), "items": list(items)},
+            timeout=self._batch_timeout_seconds,
         )
         response.raise_for_status()
         payload = response.json()

@@ -1,3 +1,4 @@
+from unittest.mock import Mock
 from uuid import UUID
 
 import httpx
@@ -130,3 +131,21 @@ def test_send_batch_raises_on_error_status() -> None:
 
     with pytest.raises(httpx.HTTPStatusError):
         client.send_batch(_BATCH_ID, [])
+
+
+def test_send_batch_uses_dedicated_longer_timeout() -> None:
+    client = SpringQuizApiClient(
+        base_url="http://spring.local",
+        internal_token="test-token",
+        timeout_seconds=10.0,
+        batch_timeout_seconds=60.0,
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=_BATCH_RESPONSE_PAYLOAD)
+        ),
+    )
+    client._client.post = Mock(wraps=client._client.post)
+
+    client.send_batch(_BATCH_ID, [])
+
+    _, call_kwargs = client._client.post.call_args
+    assert call_kwargs["timeout"] == 60.0
