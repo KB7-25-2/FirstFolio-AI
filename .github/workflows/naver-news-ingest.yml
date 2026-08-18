@@ -1,0 +1,51 @@
+name: Naver news ingest
+
+on:
+  schedule:
+    # 매일 09:00 KST (00:00 UTC)
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "네이버 뉴스 검색어"
+        required: false
+        default: "금융"
+      display:
+        description: "가져올 기사 수"
+        required: false
+        default: "5"
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    name: Fetch and register financial news
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run Naver news ingest
+        run: >
+          python -m app.naver_news_ingest
+          --query "${{ github.event.inputs.query || '금융' }}"
+          --display "${{ github.event.inputs.display || '5' }}"
+        env:
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          SPRING_INTERNAL_BASE_URL: ${{ secrets.SPRING_INTERNAL_BASE_URL }}
+          SPRING_INTERNAL_TOKEN: ${{ secrets.SPRING_INTERNAL_TOKEN }}
