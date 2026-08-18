@@ -49,3 +49,4 @@ jobs:
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           SPRING_INTERNAL_BASE_URL: ${{ secrets.SPRING_INTERNAL_BASE_URL }}
           SPRING_INTERNAL_TOKEN: ${{ secrets.SPRING_INTERNAL_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
