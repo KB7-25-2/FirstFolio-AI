@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.infrastructure.naver_news_client import NaverNewsClient, NaverNewsItem
+from app.infrastructure.openai_news_summary import OpenAINewsSummarizer
 from app.infrastructure.spring_news_api_client import (
     NewsArticlePayload,
     SpringNewsApiClient,
@@ -24,6 +25,7 @@ _CONTENT_ATTR_PATTERN = re.compile(r'content=["\']([^"\']+)["\']', re.IGNORECASE
 
 _DEFAULT_DISPLAY = 10
 _OG_IMAGE_TIMEOUT_SECONDS = 5.0
+_MAX_CANDIDATES_MULTIPLIER = 4
 
 
 def clean_text(text: str) -> str:
@@ -50,11 +52,20 @@ def fetch_og_image(client: httpx.Client, url: str) -> str | None:
     return extract_og_image(response.text)
 
 
-def to_payload(item: NaverNewsItem, image_url: str | None) -> NewsArticlePayload:
+def summarize(summarizer: OpenAINewsSummarizer, title: str, description: str) -> str:
+    try:
+        return summarizer.summarize(title, description)
+    except Exception:
+        return description
+
+
+def to_payload(
+    item: NaverNewsItem, image_url: str | None, summary: str
+) -> NewsArticlePayload:
     source_url = item.originallink or item.link
     return NewsArticlePayload(
         title=clean_text(item.title),
-        summary=clean_text(item.description),
+        summary=summary,
         image_url=image_url,
         source_name=urlparse(source_url).netloc,
         source_url=source_url,
@@ -78,15 +89,41 @@ def run_naver_news_ingest(
         base_url=runtime_settings.spring_internal_base_url,
         internal_token=runtime_settings.spring_internal_token.get_secret_value(),
     )
+    summarizer = OpenAINewsSummarizer(
+        model=runtime_settings.generation_model,
+        timeout_seconds=runtime_settings.openai_timeout_seconds,
+        max_retries=runtime_settings.openai_max_retries,
+    )
 
-    items = naver_client.search(query, display=display)
+    max_candidates = display * _MAX_CANDIDATES_MULTIPLIER
+    collected: list[tuple[NaverNewsItem, str]] = []
+    checked = 0
+    start = 1
 
-    results = []
     with httpx.Client() as scrape_client:
-        for item in items:
-            source_url = item.originallink or item.link
-            image_url = fetch_og_image(scrape_client, source_url)
-            payload = to_payload(item, image_url)
+        while len(collected) < display and checked < max_candidates:
+            items = naver_client.search(query, display=display, start=start)
+            if not items:
+                break
+
+            for item in items:
+                checked += 1
+                source_url = item.originallink or item.link
+                image_url = fetch_og_image(scrape_client, source_url)
+                if image_url:
+                    collected.append((item, image_url))
+                    if len(collected) >= display:
+                        break
+                if checked >= max_candidates:
+                    break
+
+            start += display
+
+        results = []
+        for item, image_url in collected:
+            title = clean_text(item.title)
+            summary = summarize(summarizer, title, clean_text(item.description))
+            payload = to_payload(item, image_url, summary)
             results.append(spring_client.create_article(payload))
 
     return results
