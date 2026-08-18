@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     mysql_password: SecretStr = SecretStr("")
     aws_region: str = "ap-northeast-2"
     s3_bucket_name: str = ""
+    spring_internal_base_url: str = "http://localhost:8080"
+    spring_internal_token: SecretStr = SecretStr("")
+    naver_client_id: str = ""
+    naver_client_secret: SecretStr = SecretStr("")
 
     model_config = SettingsConfigDict(
         env_file=".env",

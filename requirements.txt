@@ -8,3 +8,4 @@ numpy
 faiss-cpu
 mysql-connector-python
 boto3
+httpx

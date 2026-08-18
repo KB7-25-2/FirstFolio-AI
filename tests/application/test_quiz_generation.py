@@ -65,9 +65,21 @@ def _quiz(
     if question_type == QuestionType.SCENARIO:
         usage_type = "MAIN_CHAPTER"
         scenario_json = {
-            "character": "안정적인 저축을 원하는 학생",
-            "financial_context": "매달 용돈을 받고 있다.",
+            "title": "금융상품 선택",
+            "narrative": "안정적인 저축을 원하는 학생이 매달 용돈을 받고 있다.",
+            "persona": {"name": "민서", "age": "18세", "job": "고등학생"},
+            "requirements": {
+                "assets": "매달 받는 용돈",
+                "risk": "원금 손실을 피하고 싶음",
+                "goal": "안정적으로 저축하기",
+            },
+            "market": {
+                "title": "시장 정보",
+                "reference_at": "2026-08-10T00:00:00Z",
+                "bullets": ["검증된 시장 정보"],
+            },
             "constraints": ["원금 손실을 피해야 한다."],
+            "paper_title": "선택 보고서",
         }
 
     payload: dict[str, object] = {
@@ -617,9 +629,21 @@ def test_scenario_skips_numeric_check_and_proceeds_to_llm_grounding() -> None:
         QuestionType.SCENARIO,
         prompt="어떤 정기 예금 상품을 선택해야 할까요?",
         scenario_json={
-            "character": "고등학생",
-            "financial_context": "대학 진학을 위해 100만 원을 저축하려고 한다.",
+            "title": "정기 예금 선택",
+            "narrative": "고등학생이 대학 진학을 위해 100만 원을 저축하려고 한다.",
+            "persona": {"name": "민서", "age": "18세", "job": "고등학생"},
+            "requirements": {
+                "assets": "저축 자금 100만 원",
+                "risk": "원금 손실을 피하고 싶음",
+                "goal": "대학 진학 자금 마련",
+            },
+            "market": {
+                "title": "시장 정보",
+                "reference_at": "2026-08-10T00:00:00Z",
+                "bullets": ["검증된 시장 정보"],
+            },
             "constraints": ["예치 기간이 1개월 이상 5년 이내"],
+            "paper_title": "선택 보고서",
         },
         options=[
             {"option_id": "1", "text": "1개월 후 만기, 이자율 1.5%"},

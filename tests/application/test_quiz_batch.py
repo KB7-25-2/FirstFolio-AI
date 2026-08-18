@@ -4,21 +4,28 @@ from uuid import UUID
 
 import pytest
 
-from app.application.quiz_batch import QuizBatchService
+from app.application.quiz_batch import (
+    QuizBatchService,
+    build_batch_items_from_targets,
+)
 from app.application.quiz_generation import (
     QuizGenerationService,
     QuizGenerationValidationError,
 )
 from app.application.quiz_validation import normalize_quiz_prompt
 from app.domain.quiz import (
+    ChapterType,
+    MainChapterTarget,
     QuestionType,
     Quiz,
     QuizBatchRequestItem,
     QuizBatchStatus,
     QuizExecution,
     QuizGenerationResult,
+    QuizGenerationTargets,
     QuizSource,
     QuizValidation,
+    SubChapterTarget,
 )
 
 
@@ -47,9 +54,21 @@ def _quiz_result(
     if question_type == QuestionType.SCENARIO:
         usage_type = "MAIN_CHAPTER"
         scenario_json = {
-            "character": "저축을 계획하는 학생",
-            "financial_context": "일정한 용돈을 받고 있다.",
+            "title": "금융상품 선택",
+            "narrative": "저축을 계획하는 학생이 일정한 용돈을 받고 있다.",
+            "persona": {"name": "민서", "age": "18세", "job": "고등학생"},
+            "requirements": {
+                "assets": "매달 받는 용돈",
+                "risk": "원금 손실을 피하고 싶음",
+                "goal": "안정적으로 저축하기",
+            },
+            "market": {
+                "title": "시장 정보",
+                "reference_at": "2026-08-10T00:00:00Z",
+                "bullets": ["검증된 시장 정보"],
+            },
             "constraints": ["원금 손실을 피해야 한다."],
+            "paper_title": "선택 보고서",
         }
 
     return QuizGenerationResult(
@@ -341,3 +360,88 @@ def test_generate_uuid4_batch_and_item_ids_by_default() -> None:
     assert run.summary.batch_id.version == 4
     assert run.records[0].batch_id == run.summary.batch_id
     assert run.records[0].item_id.version == 4
+
+
+def test_generate_carries_chapter_ids_from_request_item_to_record_input() -> None:
+    generation_service = Mock(spec=QuizGenerationService)
+    generation_service.generate.return_value = _quiz_result(
+        QuestionType.TRUE_FALSE,
+        "예금 OX 질문",
+    )
+    service = QuizBatchService(generation_service)
+
+    run = service.generate(
+        [
+            QuizBatchRequestItem(
+                question_type="TRUE_FALSE",
+                topic="예금과 적금의 차이",
+                main_chapter_id=2,
+                sub_chapter_id=17,
+            )
+        ]
+    )
+
+    assert run.records[0].input.main_chapter_id == 2
+    assert run.records[0].input.sub_chapter_id == 17
+
+
+def _targets() -> QuizGenerationTargets:
+    return QuizGenerationTargets(
+        main_chapters=[
+            MainChapterTarget(
+                main_chapter_id=2,
+                title="예·적금",
+                chapter_type=ChapterType.ASSET,
+                sub_chapters=[
+                    SubChapterTarget(
+                        sub_chapter_id=17,
+                        main_chapter_id=2,
+                        title="예금과 적금의 차이",
+                    ),
+                    SubChapterTarget(
+                        sub_chapter_id=18,
+                        main_chapter_id=2,
+                        title="금리 이해하기",
+                    ),
+                ],
+            )
+        ]
+    )
+
+
+def test_build_batch_items_from_targets_covers_every_sub_chapter_and_type() -> None:
+    items = build_batch_items_from_targets(
+        _targets(),
+        question_types=[QuestionType.TRUE_FALSE, QuestionType.SINGLE_CHOICE],
+        count_per_type=3,
+    )
+
+    assert len(items) == 4
+
+    first = items[0]
+    assert first.question_type == "TRUE_FALSE"
+    assert first.topic == "예금과 적금의 차이"
+    assert first.main_chapter_id == 2
+    assert first.sub_chapter_id == 17
+    assert first.count == 3
+
+    second = items[1]
+    assert second.question_type == "SINGLE_CHOICE"
+    assert second.topic == "예금과 적금의 차이"
+    assert second.main_chapter_id == 2
+    assert second.sub_chapter_id == 17
+
+    third = items[2]
+    assert third.topic == "금리 이해하기"
+    assert third.sub_chapter_id == 18
+
+
+def test_build_batch_items_from_targets_returns_empty_list_when_no_targets() -> None:
+    empty_targets = QuizGenerationTargets(main_chapters=[])
+
+    items = build_batch_items_from_targets(
+        empty_targets,
+        question_types=[QuestionType.TRUE_FALSE],
+    )
+
+    assert items == []

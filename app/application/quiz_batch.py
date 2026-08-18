@@ -16,7 +16,29 @@ from app.domain.quiz import (
     QuizBatchRequestItem,
     QuizBatchStatus,
     QuizBatchSummary,
+    QuizGenerationTargets,
 )
+
+
+def build_batch_items_from_targets(
+    targets: QuizGenerationTargets,
+    question_types: Sequence[QuestionType],
+    count_per_type: int = 3,
+) -> list[QuizBatchRequestItem]:
+    items: list[QuizBatchRequestItem] = []
+    for main_chapter in targets.main_chapters:
+        for sub_chapter in main_chapter.sub_chapters:
+            for question_type in question_types:
+                items.append(
+                    QuizBatchRequestItem(
+                        question_type=question_type.value,
+                        topic=sub_chapter.title,
+                        count=count_per_type,
+                        main_chapter_id=sub_chapter.main_chapter_id,
+                        sub_chapter_id=sub_chapter.sub_chapter_id,
+                    )
+                )
+    return items
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +74,8 @@ class QuizBatchService:
                 item_input = QuizBatchItemInput(
                     question_type=requested_item.question_type.strip(),
                     topic=requested_item.topic.strip(),
+                    main_chapter_id=requested_item.main_chapter_id,
+                    sub_chapter_id=requested_item.sub_chapter_id,
                 )
                 record = self._generate_item(
                     batch_id=batch_id,
