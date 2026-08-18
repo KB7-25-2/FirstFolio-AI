@@ -33,12 +33,15 @@ class NaverNewsClient:
             transport=transport,
         )
 
-    def search(self, query: str, display: int = 10) -> list[NaverNewsItem]:
+    def search(
+        self, query: str, display: int = 10, start: int = 1
+    ) -> list[NaverNewsItem]:
         response = self._client.get(
             _SEARCH_PATH,
             params={
                 "query": query,
                 "display": display,
+                "start": start,
                 "sort": "date",
                 "format": "json",
             },
