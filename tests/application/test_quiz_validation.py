@@ -11,7 +11,7 @@ from app.application.quiz_validation import (
     validate_quiz_rules,
 )
 from app.domain.chunk import DocumentChunk
-from app.domain.quiz import QuestionType, Quiz
+from app.domain.quiz import QuestionType, Quiz, UsageType
 
 
 def _quiz_payload(
@@ -133,6 +133,28 @@ def test_reject_usage_type_mismatch(
     result = validate_quiz_rules(
         quiz=_quiz(question_type, usage_type=usage_type),
         retrieved_chunks=_chunks(),
+    )
+
+    assert result.answer_valid is False
+    assert "usage_type_mismatch" in result.errors
+
+
+def test_accept_expected_usage_type_override_for_daily_general() -> None:
+    result = validate_quiz_rules(
+        quiz=_quiz("TRUE_FALSE", usage_type="DAILY_GENERAL"),
+        retrieved_chunks=_chunks(),
+        expected_usage_type=UsageType.DAILY_GENERAL,
+    )
+
+    assert result.answer_valid is True
+    assert "usage_type_mismatch" not in result.errors
+
+
+def test_reject_usage_type_mismatch_against_override() -> None:
+    result = validate_quiz_rules(
+        quiz=_quiz("TRUE_FALSE", usage_type="SUB_CHAPTER"),
+        retrieved_chunks=_chunks(),
+        expected_usage_type=UsageType.DAILY_GENERAL,
     )
 
     assert result.answer_valid is False

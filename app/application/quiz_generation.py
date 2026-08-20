@@ -26,6 +26,7 @@ from app.domain.quiz import (
     QuizExecution,
     QuizGenerationResult,
     QuizValidation,
+    UsageType,
 )
 
 
@@ -76,6 +77,7 @@ class QuizGenerationService:
         question_type: QuestionType,
         topic: str,
         existing_prompts: Sequence[str] = (),
+        usage_type: UsageType | None = None,
     ) -> QuizGenerationResult:
         started_at = monotonic_ns()
         search_results = self._hybrid_search.search(topic)
@@ -97,6 +99,7 @@ class QuizGenerationService:
             topic=topic,
             retrieved_chunks=retrieved_chunks,
             true_false_target=true_false_target,
+            usage_type=usage_type,
         )
         generation_result = self._model_client.generate_quiz(
             generation_prompt,
@@ -111,6 +114,7 @@ class QuizGenerationService:
             retrieved_chunks=retrieved_chunks,
             existing_prompts=existing_prompts,
             expected_question_type=question_type,
+            expected_usage_type=usage_type,
         )
 
         if rule_validation.errors:
