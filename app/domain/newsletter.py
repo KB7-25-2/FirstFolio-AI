@@ -38,6 +38,36 @@ class NewsletterStat(BaseModel):
     value: str = Field(min_length=1)
 
 
+class NewsletterCitation(BaseModel):
+    """LLM이 생성 단계에서 직접 반환하는 인용 — chunk_repository로 보강되기 전.
+
+    보강 후 최종적으로 `NewsletterIssueSource`(document_id·source_url 포함)가 된다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_key: str = Field(min_length=1)
+    evidence_text: str = Field(min_length=1)
+
+
+class NewsletterIssueGenerationOutput(BaseModel):
+    """이슈 하나에 대한 LLM 생성 결과 — 최종 `NewsletterIssue`가 되기 전 원본."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    financial_word: FinancialWord
+    stat: NewsletterStat
+    citations: list[NewsletterCitation] = Field(min_length=1)
+
+
+class NewsletterHeadlineOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    headline: str = Field(min_length=1)
+
+
 class NewsletterDraft(BaseModel):
     """AI가 생성해 BE `POST /api/internal/newsletters`로 보내는 페이로드.
 
@@ -57,3 +87,13 @@ class NewsletterDraft(BaseModel):
     stats_json: list[NewsletterStat] = Field(
         min_length=REQUIRED_SECTION_SIZE, max_length=REQUIRED_SECTION_SIZE
     )
+
+
+class NewsletterDeliveryResponse(BaseModel):
+    """BE `POST /api/internal/newsletters` 응답."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    newsletter_id: int
+    week_start_date: date
+    status: str
