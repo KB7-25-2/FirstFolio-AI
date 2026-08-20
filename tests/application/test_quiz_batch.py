@@ -7,6 +7,7 @@ import pytest
 from app.application.quiz_batch import (
     QuizBatchService,
     build_batch_items_from_targets,
+    build_daily_general_items_from_targets,
 )
 from app.application.quiz_generation import (
     QuizGenerationService,
@@ -26,6 +27,7 @@ from app.domain.quiz import (
     QuizSource,
     QuizValidation,
     SubChapterTarget,
+    UsageType,
 )
 
 
@@ -268,8 +270,9 @@ def test_detect_duplicate_prompt_and_link_original_item(
         question_type: QuestionType,
         topic: str,
         existing_prompts: Sequence[str],
+        usage_type: UsageType | None = None,
     ) -> QuizGenerationResult:
-        del topic
+        del topic, usage_type
         result = (
             first_result
             if not existing_prompts
@@ -440,6 +443,40 @@ def test_build_batch_items_from_targets_returns_empty_list_when_no_targets() -> 
     empty_targets = QuizGenerationTargets(main_chapters=[])
 
     items = build_batch_items_from_targets(
+        empty_targets,
+        question_types=[QuestionType.TRUE_FALSE],
+    )
+
+    assert items == []
+
+
+def test_build_daily_general_items_from_targets_tags_daily_general_usage_type() -> None:
+    items = build_daily_general_items_from_targets(
+        _targets(),
+        question_types=[QuestionType.TRUE_FALSE, QuestionType.SINGLE_CHOICE],
+        count_per_type=3,
+    )
+
+    assert len(items) == 4
+
+    first = items[0]
+    assert first.question_type == "TRUE_FALSE"
+    assert first.topic == "예금과 적금의 차이"
+    assert first.main_chapter_id == 2
+    assert first.sub_chapter_id == 17
+    assert first.count == 3
+    assert first.usage_type == UsageType.DAILY_GENERAL
+
+    for item in items:
+        assert item.usage_type == UsageType.DAILY_GENERAL
+
+
+def test_build_daily_general_items_from_targets_returns_empty_list_when_no_targets() -> (
+    None
+):
+    empty_targets = QuizGenerationTargets(main_chapters=[])
+
+    items = build_daily_general_items_from_targets(
         empty_targets,
         question_types=[QuestionType.TRUE_FALSE],
     )
