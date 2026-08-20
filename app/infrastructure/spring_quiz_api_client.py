@@ -3,10 +3,12 @@ from uuid import UUID
 
 import httpx
 
+from app.domain.newsletter import NewsletterDeliveryResponse, NewsletterDraft
 from app.domain.quiz import BeBatchResponse, QuizGenerationTargets
 
 _TARGETS_PATH = "/api/internal/quiz-generation-targets"
 _BATCHES_PATH = "/api/internal/quiz-questions/batches"
+_NEWSLETTERS_PATH = "/api/internal/newsletters"
 
 
 class SpringQuizApiClient:
@@ -45,3 +47,16 @@ class SpringQuizApiClient:
         response.raise_for_status()
         payload = response.json()
         return BeBatchResponse.model_validate(payload["data"])
+
+    def send_newsletter(
+        self,
+        draft: NewsletterDraft,
+    ) -> NewsletterDeliveryResponse:
+        response = self._client.post(
+            _NEWSLETTERS_PATH,
+            json=draft.model_dump(mode="json"),
+            timeout=self._batch_timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return NewsletterDeliveryResponse.model_validate(payload["data"])

@@ -1,9 +1,17 @@
+from datetime import date
 from unittest.mock import Mock
 from uuid import UUID
 
 import httpx
 import pytest
 
+from app.domain.newsletter import (
+    FinancialWord,
+    NewsletterDraft,
+    NewsletterIssue,
+    NewsletterIssueSource,
+    NewsletterStat,
+)
 from app.domain.quiz import ChapterType
 from app.infrastructure.spring_quiz_api_client import SpringQuizApiClient
 
@@ -45,6 +53,79 @@ _BATCH_RESPONSE_PAYLOAD = {
         ],
     }
 }
+
+
+def _newsletter_draft() -> NewsletterDraft:
+    word = FinancialWord(term="정기예금", definition="일정 기간 돈을 맡기는 예금")
+    stat = NewsletterStat(label="정기예금 증가액", value="+35조 5,401억 원")
+    issue = NewsletterIssue(
+        title="정기예금 급증",
+        summary="기업 자금이 정기예금으로 몰렸다.",
+        related_term="정기예금",
+        sources=[
+            NewsletterIssueSource(
+                document_id=47,
+                chunk_key="47:0",
+                source_url=None,
+                evidence_text="정기예금 잔액이 크게 늘었다.",
+            )
+        ],
+    )
+    return NewsletterDraft(
+        week_start_date=date(2026, 8, 17),
+        headline="역대 최대 흑자 속에서도, 돈은 안전자산으로",
+        financial_words_json=[word, word, word],
+        issues_json=[issue, issue, issue],
+        stats_json=[stat, stat, stat],
+    )
+
+
+_NEWSLETTER_RESPONSE_PAYLOAD = {
+    "data": {
+        "newsletter_id": 1,
+        "week_start_date": "2026-08-17",
+        "status": "REVIEW",
+    }
+}
+
+
+def test_send_newsletter_posts_draft_and_parses_response() -> None:
+    captured_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        return httpx.Response(200, json=_NEWSLETTER_RESPONSE_PAYLOAD)
+
+    client = SpringQuizApiClient(
+        base_url="http://spring.local",
+        internal_token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.send_newsletter(_newsletter_draft())
+
+    assert len(captured_requests) == 1
+    request = captured_requests[0]
+    assert request.url.path == "/api/internal/newsletters"
+    assert request.headers["x-internal-token"] == "test-token"
+
+    assert result.newsletter_id == 1
+    assert result.week_start_date == date(2026, 8, 17)
+    assert result.status == "REVIEW"
+
+
+def test_send_newsletter_raises_on_error_status() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": {"code": "INVALID_REQUEST"}})
+
+    client = SpringQuizApiClient(
+        base_url="http://spring.local",
+        internal_token="test-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.send_newsletter(_newsletter_draft())
 
 
 def test_find_targets_parses_response_and_sends_internal_token() -> None:
