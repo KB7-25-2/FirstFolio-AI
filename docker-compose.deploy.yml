@@ -9,6 +9,8 @@ services:
       APP_ENV: production
     ports:
       - "${APP_PORT:-8000}:${APP_PORT:-8000}"
+    volumes:
+      - ./data/local:/app/data/local
     restart: unless-stopped
     command:
       - uvicorn
