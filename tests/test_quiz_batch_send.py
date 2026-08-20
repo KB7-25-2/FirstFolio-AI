@@ -151,6 +151,39 @@ def test_run_quiz_batch_send_orchestrates_target_lookup_generation_and_delivery(
     assert json.loads(delivery_lines[0])["accepted"] == 2
 
 
+def test_run_quiz_batch_send_main_chapter_target_generates_scenario_items(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_service = Mock(spec=QuizGenerationService)
+    generation_service.generate.return_value = _quiz_result()
+    monkeypatch.setattr(
+        quiz_batch_send,
+        "create_quiz_generation_service",
+        Mock(return_value=generation_service),
+    )
+
+    fake_api_client = Mock()
+    fake_api_client.find_targets.return_value = _targets()
+    fake_api_client.send_batch.return_value = _fake_be_response(1)
+    monkeypatch.setattr(
+        quiz_batch_send,
+        "SpringQuizApiClient",
+        Mock(return_value=fake_api_client),
+    )
+
+    responses = quiz_batch_send.run_quiz_batch_send(
+        target="main_chapter",
+        count_per_chapter=1,
+        settings=Settings(_env_file=None),
+        generation_output_path=tmp_path / "generation.jsonl",
+        delivery_output_path=tmp_path / "delivery.jsonl",
+    )
+
+    assert generation_service.generate.call_count == 1
+    assert responses[0].accepted == 1
+
+
 def test_run_quiz_batch_send_rejects_empty_targets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -210,3 +243,19 @@ def test_build_argument_parser_splits_question_types() -> None:
 
     assert arguments.question_types == "TRUE_FALSE,SINGLE_CHOICE"
     assert arguments.count_per_type == 5
+
+
+def test_build_argument_parser_parses_main_chapter_target() -> None:
+    arguments = quiz_batch_send.build_argument_parser().parse_args(
+        ["--target", "main_chapter", "--count-per-chapter", "2"]
+    )
+
+    assert arguments.target == "main_chapter"
+    assert arguments.count_per_chapter == 2
+
+
+def test_build_argument_parser_defaults_target_to_sub_chapter() -> None:
+    arguments = quiz_batch_send.build_argument_parser().parse_args([])
+
+    assert arguments.target == "sub_chapter"
+    assert arguments.count_per_chapter == 1
