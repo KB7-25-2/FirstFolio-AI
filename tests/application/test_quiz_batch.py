@@ -1,4 +1,5 @@
 from collections.abc import Iterator, Sequence
+from datetime import datetime
 from unittest.mock import Mock
 from uuid import UUID
 
@@ -8,12 +9,14 @@ from app.application.quiz_batch import (
     QuizBatchService,
     build_batch_items_from_targets,
     build_daily_general_items_from_targets,
+    build_daily_news_items_from_targets,
 )
 from app.application.quiz_generation import (
     QuizGenerationService,
     QuizGenerationValidationError,
 )
 from app.application.quiz_validation import normalize_quiz_prompt
+from app.domain.chunk import DocumentChunk
 from app.domain.quiz import (
     ChapterType,
     MainChapterTarget,
@@ -480,5 +483,55 @@ def test_build_daily_general_items_from_targets_returns_empty_list_when_no_targe
         empty_targets,
         question_types=[QuestionType.TRUE_FALSE],
     )
+
+    assert items == []
+
+
+def _chunk(
+    document_id: str,
+    sequence: int,
+    title: str,
+    published_at: datetime | None,
+) -> DocumentChunk:
+    return DocumentChunk(
+        document_id=document_id,
+        chunk_key=f"{document_id}:{sequence}",
+        sequence=sequence,
+        content=f"{title} 본문 {sequence}",
+        title=title,
+        source=f"{title}.txt",
+        published_at=published_at,
+    )
+
+
+def test_build_daily_news_items_from_targets_groups_by_article_and_tags_daily_news() -> (
+    None
+):
+    chunks = [
+        _chunk("101", 0, "경상수지 최대 흑자", datetime(2026, 8, 6, 8, 0)),
+        _chunk("101", 1, "경상수지 최대 흑자", datetime(2026, 8, 6, 8, 0)),
+        _chunk("102", 0, "예금 금리 상승", datetime(2026, 8, 5, 10, 0)),
+        _chunk("9", 0, "제1장 금융의 역할", None),
+    ]
+
+    items = build_daily_news_items_from_targets(chunks)
+
+    assert len(items) == 2
+    topics = {item.topic: item for item in items}
+    assert topics["경상수지 최대 흑자"].quest_date.isoformat() == "2026-08-06"
+    assert topics["예금 금리 상승"].quest_date.isoformat() == "2026-08-05"
+    for item in items:
+        assert item.usage_type == UsageType.DAILY_NEWS
+        assert item.question_type == "SCENARIO"
+        assert item.main_chapter_id is None
+        assert item.count == 1
+
+
+def test_build_daily_news_items_from_targets_excludes_chunks_without_published_at() -> (
+    None
+):
+    chunks = [_chunk("9", 0, "제1장 금융의 역할", None)]
+
+    items = build_daily_news_items_from_targets(chunks)
 
     assert items == []

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -9,6 +9,7 @@ class UsageType(StrEnum):
     SUB_CHAPTER = "SUB_CHAPTER"
     MAIN_CHAPTER = "MAIN_CHAPTER"
     DAILY_GENERAL = "DAILY_GENERAL"
+    DAILY_NEWS = "DAILY_NEWS"
 
 
 class QuestionType(StrEnum):
@@ -156,6 +157,7 @@ class QuizBatchItemInput(BaseModel):
     main_chapter_id: int | None = None
     sub_chapter_id: int | None = None
     usage_type: UsageType | None = None
+    quest_date: date | None = None
 
 
 class QuizBatchRequestItem(QuizBatchItemInput):

@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import uuid4
 
 import pytest
@@ -108,6 +109,7 @@ def _succeeded_record(
     sub_chapter_id: int | None = 17,
     question_type: str = "TRUE_FALSE",
     usage_type: str = "SUB_CHAPTER",
+    quest_date: date | None = None,
 ) -> QuizBatchRecord:
     return QuizBatchRecord(
         batch_id=uuid4(),
@@ -118,6 +120,7 @@ def _succeeded_record(
             topic="예금과 적금의 차이",
             main_chapter_id=main_chapter_id,
             sub_chapter_id=sub_chapter_id,
+            quest_date=quest_date,
         ),
         result=_generation_result(question_type=question_type, usage_type=usage_type),
         error=None,
@@ -145,7 +148,24 @@ def test_to_be_quiz_payload_maps_fields() -> None:
         "correct_answer_json": {"key": "O"},
         "explanation": "정기 예금은 일정 기간 돈을 맡기는 저축성 예금이다.",
         "source_refs_json": None,
+        "quest_date": None,
     }
+
+
+def test_to_be_quiz_payload_allows_missing_main_chapter_id_for_daily_news() -> None:
+    record = _succeeded_record(
+        main_chapter_id=None,
+        sub_chapter_id=None,
+        question_type="SCENARIO",
+        usage_type="DAILY_NEWS",
+        quest_date=date(2026, 8, 6),
+    )
+
+    payload = to_be_quiz_payload(record)
+
+    assert payload["usage_type"] == "DAILY_NEWS"
+    assert payload["main_chapter_id"] is None
+    assert payload["quest_date"] == "2026-08-06"
 
 
 def test_to_be_quiz_payload_rejects_non_succeeded_record() -> None:
