@@ -17,6 +17,7 @@ from app.domain.quiz import (
     QuizBatchStatus,
     QuizBatchSummary,
     QuizGenerationTargets,
+    UsageType,
 )
 
 
@@ -36,6 +37,34 @@ def build_batch_items_from_targets(
                         count=count_per_type,
                         main_chapter_id=sub_chapter.main_chapter_id,
                         sub_chapter_id=sub_chapter.sub_chapter_id,
+                    )
+                )
+    return items
+
+
+def build_daily_general_items_from_targets(
+    targets: QuizGenerationTargets,
+    question_types: Sequence[QuestionType],
+    count_per_type: int = 3,
+) -> list[QuizBatchRequestItem]:
+    """기존 활성 소단원 주제를 재사용해 DAILY_GENERAL 문항 배치 아이템을 만든다.
+
+    소단원 문항과 topic·근거는 동일하게 뽑되, usage_type만 DAILY_GENERAL로
+    태그해 일일 퀘스트 풀에 들어가게 한다. sub_chapter_id는 그대로 남겨
+    DailyQuestQuestionSelector의 약점 매칭 정확도를 높인다.
+    """
+    items: list[QuizBatchRequestItem] = []
+    for main_chapter in targets.main_chapters:
+        for sub_chapter in main_chapter.sub_chapters:
+            for question_type in question_types:
+                items.append(
+                    QuizBatchRequestItem(
+                        question_type=question_type.value,
+                        topic=sub_chapter.title,
+                        count=count_per_type,
+                        main_chapter_id=sub_chapter.main_chapter_id,
+                        sub_chapter_id=sub_chapter.sub_chapter_id,
+                        usage_type=UsageType.DAILY_GENERAL,
                     )
                 )
     return items
@@ -76,6 +105,7 @@ class QuizBatchService:
                     topic=requested_item.topic.strip(),
                     main_chapter_id=requested_item.main_chapter_id,
                     sub_chapter_id=requested_item.sub_chapter_id,
+                    usage_type=requested_item.usage_type,
                 )
                 record = self._generate_item(
                     batch_id=batch_id,
@@ -134,6 +164,7 @@ class QuizBatchService:
                 question_type=question_type,
                 topic=item_input.topic,
                 existing_prompts=tuple(successful_prompts),
+                usage_type=item_input.usage_type,
             )
         except QuizGenerationValidationError as error:
             duplicate_prompt = (

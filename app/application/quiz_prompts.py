@@ -61,6 +61,7 @@ def build_quiz_generation_prompt(
     topic: str,
     retrieved_chunks: Sequence[DocumentChunk],
     true_false_target: str | None = None,
+    usage_type: UsageType | None = None,
 ) -> str:
     normalized_topic = topic.strip()
 
@@ -68,7 +69,7 @@ def build_quiz_generation_prompt(
         raise ValueError("퀴즈 생성 주제는 비어 있을 수 없습니다.")
 
     evidence = _format_evidence(retrieved_chunks)
-    usage_type = _USAGE_TYPE_BY_QUESTION_TYPE[question_type]
+    usage_type = usage_type or _USAGE_TYPE_BY_QUESTION_TYPE[question_type]
     output_schema = json.dumps(
         Quiz.model_json_schema(),
         ensure_ascii=False,

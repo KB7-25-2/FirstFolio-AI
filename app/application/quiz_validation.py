@@ -187,6 +187,7 @@ def validate_quiz_rules(
     retrieved_chunks: Sequence[DocumentChunk],
     existing_prompts: Sequence[str] = (),
     expected_question_type: QuestionType | None = None,
+    expected_usage_type: UsageType | None = None,
 ) -> QuizRuleValidation:
     answer_errors: list[str] = []
     citation_errors: list[str] = []
@@ -197,11 +198,14 @@ def validate_quiz_rules(
     ):
         answer_errors.append("question_type_mismatch")
 
-    expected_usage = {
-        QuestionType.TRUE_FALSE: UsageType.SUB_CHAPTER,
-        QuestionType.SINGLE_CHOICE: UsageType.SUB_CHAPTER,
-        QuestionType.SCENARIO: UsageType.MAIN_CHAPTER,
-    }[quiz.question_type]
+    expected_usage = (
+        expected_usage_type
+        or {
+            QuestionType.TRUE_FALSE: UsageType.SUB_CHAPTER,
+            QuestionType.SINGLE_CHOICE: UsageType.SUB_CHAPTER,
+            QuestionType.SCENARIO: UsageType.MAIN_CHAPTER,
+        }[quiz.question_type]
+    )
     expected_option_ids = {
         QuestionType.TRUE_FALSE: ["O", "X"],
         QuestionType.SINGLE_CHOICE: ["1", "2", "3", "4"],

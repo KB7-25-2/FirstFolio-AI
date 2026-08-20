@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class UsageType(StrEnum):
     SUB_CHAPTER = "SUB_CHAPTER"
     MAIN_CHAPTER = "MAIN_CHAPTER"
+    DAILY_GENERAL = "DAILY_GENERAL"
 
 
 class QuestionType(StrEnum):
@@ -154,6 +155,7 @@ class QuizBatchItemInput(BaseModel):
     topic: str
     main_chapter_id: int | None = None
     sub_chapter_id: int | None = None
+    usage_type: UsageType | None = None
 
 
 class QuizBatchRequestItem(QuizBatchItemInput):
