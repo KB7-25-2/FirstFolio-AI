@@ -8,6 +8,7 @@ from app.application.quiz_generation import (
     QuizGenerationValidationError,
 )
 from app.application.search.hybrid import HybridSearch
+from app.application.search.index_health import check_index_matches_corpus
 from app.core.config import Settings
 from app.domain.quiz import QuestionType, QuizGenerationResult
 from app.infrastructure.openai_embedding import OpenAIEmbeddingClient
@@ -43,6 +44,28 @@ def create_quiz_generation_service(
         mapping_path=settings.faiss_mapping_path,
         embedding_client=embedding_client,
     )
+    index_health = check_index_matches_corpus(
+        corpus_chunk_count=len(chunks),
+        faiss_vector_count=faiss_search.vector_count,
+    )
+
+    if not index_health.matches:
+        print(
+            json.dumps(
+                {
+                    "warning": "faiss_index_corpus_mismatch",
+                    "corpus_chunk_count": index_health.corpus_chunk_count,
+                    "faiss_vector_count": index_health.faiss_vector_count,
+                    "reason": (
+                        "FAISS 인덱스가 MySQL 청크와 어긋나 있어 일부 검색 결과가 "
+                        "누락될 수 있습니다. FAISS 재색인이 필요합니다."
+                    ),
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
+
     hybrid_search = HybridSearch(
         settings=settings,
         bm25_search=bm25_search,

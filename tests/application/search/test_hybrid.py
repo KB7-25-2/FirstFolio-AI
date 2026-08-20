@@ -66,6 +66,8 @@ def test_combine_bm25_and_faiss_results_by_chunk_key() -> None:
 
     settings = Settings(
         search_top_k=5,
+        search_candidate_top_k=5,
+        search_rrf_k=1,
         bm25_weight=0.7,
         faiss_weight=0.3,
         _env_file=None,
@@ -79,6 +81,7 @@ def test_combine_bm25_and_faiss_results_by_chunk_key() -> None:
 
     results = hybrid_search.search("안전하게 돈을 맡기기")
 
+    # rrf_k=1: bm25 deposit=0.7/2, stock=0.7/3 / faiss deposit=0.3/2, bond=0.3/3
     assert [result.chunk.chunk_key for result in results] == [
         "deposit:0",
         "stock:0",
@@ -86,9 +89,9 @@ def test_combine_bm25_and_faiss_results_by_chunk_key() -> None:
     ]
     assert [result.score for result in results] == pytest.approx(
         [
-            1.0,
-            0.35,
-            0.15,
+            0.7 / 2 + 0.3 / 2,
+            0.7 / 3,
+            0.3 / 3,
         ]
     )
     bm25_search.search.assert_called_once_with(
@@ -98,6 +101,50 @@ def test_combine_bm25_and_faiss_results_by_chunk_key() -> None:
     faiss_search.search.assert_called_once_with(
         query="안전하게 돈을 맡기기",
         top_k=5,
+    )
+
+
+def test_search_candidate_pool_can_exceed_final_top_k() -> None:
+    deposit_chunk = create_chunk("deposit", "예금")
+
+    bm25_search = Mock()
+    bm25_search.search.return_value = [
+        SearchResult(
+            chunk=deposit_chunk,
+            score=10.0,
+        )
+    ]
+
+    faiss_search = Mock()
+    faiss_search.search.return_value = []
+
+    repository = InMemoryChunkRepository()
+    repository.save_all([deposit_chunk])
+
+    settings = Settings(
+        search_top_k=5,
+        search_candidate_top_k=20,
+        search_rrf_k=60,
+        bm25_weight=0.7,
+        faiss_weight=0.3,
+        _env_file=None,
+    )
+    hybrid_search = HybridSearch(
+        settings=settings,
+        bm25_search=bm25_search,
+        faiss_search=faiss_search,
+        chunk_repository=repository,
+    )
+
+    hybrid_search.search("예금")
+
+    bm25_search.search.assert_called_once_with(
+        query="예금",
+        top_k=20,
+    )
+    faiss_search.search.assert_called_once_with(
+        query="예금",
+        top_k=20,
     )
 
 
@@ -117,6 +164,8 @@ def test_skip_faiss_search_when_faiss_weight_is_zero() -> None:
 
     settings = Settings(
         search_top_k=5,
+        search_candidate_top_k=5,
+        search_rrf_k=1,
         bm25_weight=1.0,
         faiss_weight=0.0,
         _env_file=None,
@@ -133,7 +182,7 @@ def test_skip_faiss_search_when_faiss_weight_is_zero() -> None:
     assert [result.chunk.chunk_key for result in results] == [
         "deposit:0",
     ]
-    assert results[0].score == pytest.approx(1.0)
+    assert results[0].score == pytest.approx(1.0 / 2)
     bm25_search.search.assert_called_once_with(
         query="예금",
         top_k=5,
@@ -159,6 +208,8 @@ def test_skip_bm25_search_when_bm25_weight_is_zero() -> None:
 
     settings = Settings(
         search_top_k=5,
+        search_candidate_top_k=5,
+        search_rrf_k=1,
         bm25_weight=0.0,
         faiss_weight=1.0,
         _env_file=None,
@@ -175,7 +226,7 @@ def test_skip_bm25_search_when_bm25_weight_is_zero() -> None:
     assert [result.chunk.chunk_key for result in results] == [
         "deposit:0",
     ]
-    assert results[0].score == pytest.approx(1.0)
+    assert results[0].score == pytest.approx(1.0 / 2)
     bm25_search.search.assert_not_called()
     faiss_search.search.assert_called_once_with(
         query="안전한 금융상품",
@@ -223,6 +274,8 @@ def test_limit_combined_results_to_search_top_k() -> None:
 
     settings = Settings(
         search_top_k=2,
+        search_candidate_top_k=5,
+        search_rrf_k=1,
         bm25_weight=0.7,
         faiss_weight=0.3,
         _env_file=None,
@@ -259,6 +312,8 @@ def test_raise_error_when_faiss_chunk_key_does_not_exist() -> None:
 
     settings = Settings(
         search_top_k=5,
+        search_candidate_top_k=5,
+        search_rrf_k=1,
         bm25_weight=0.7,
         faiss_weight=0.3,
         _env_file=None,
@@ -288,6 +343,8 @@ def test_return_empty_list_when_both_searches_have_no_results() -> None:
 
     settings = Settings(
         search_top_k=5,
+        search_candidate_top_k=5,
+        search_rrf_k=1,
         bm25_weight=0.7,
         faiss_weight=0.3,
         _env_file=None,
