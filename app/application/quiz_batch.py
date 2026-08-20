@@ -43,6 +43,31 @@ def build_batch_items_from_targets(
     return items
 
 
+def build_main_chapter_items_from_targets(
+    targets: QuizGenerationTargets,
+    count_per_chapter: int = 1,
+) -> list[QuizBatchRequestItem]:
+    """대단원별로 MAIN_CHAPTER 시나리오 문항 배치 아이템을 만든다.
+
+    소단원이 아닌 대단원 자체를 topic으로 검색하므로 sub_chapter_id는
+    비워둔다. 리트리벌은 topic 텍스트 기반 하이브리드 서치라 대단원
+    제목만으로도 관련 청크를 찾을 수 있다.
+    """
+    items: list[QuizBatchRequestItem] = []
+    for main_chapter in targets.main_chapters:
+        items.append(
+            QuizBatchRequestItem(
+                question_type=QuestionType.SCENARIO.value,
+                topic=main_chapter.title,
+                count=count_per_chapter,
+                main_chapter_id=main_chapter.main_chapter_id,
+                sub_chapter_id=None,
+                usage_type=UsageType.MAIN_CHAPTER,
+            )
+        )
+    return items
+
+
 def build_daily_general_items_from_targets(
     targets: QuizGenerationTargets,
     question_types: Sequence[QuestionType],

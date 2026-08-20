@@ -10,6 +10,7 @@ from app.application.quiz_batch import (
     build_batch_items_from_targets,
     build_daily_general_items_from_targets,
     build_daily_news_items_from_targets,
+    build_main_chapter_items_from_targets,
 )
 from app.application.quiz_generation import (
     QuizGenerationService,
@@ -449,6 +450,36 @@ def test_build_batch_items_from_targets_returns_empty_list_when_no_targets() -> 
         empty_targets,
         question_types=[QuestionType.TRUE_FALSE],
     )
+
+    assert items == []
+
+
+def test_build_main_chapter_items_from_targets_covers_every_main_chapter() -> None:
+    items = build_main_chapter_items_from_targets(_targets())
+
+    assert len(items) == 1
+
+    first = items[0]
+    assert first.question_type == "SCENARIO"
+    assert first.topic == "예·적금"
+    assert first.main_chapter_id == 2
+    assert first.sub_chapter_id is None
+    assert first.count == 1
+    assert first.usage_type == UsageType.MAIN_CHAPTER
+
+
+def test_build_main_chapter_items_from_targets_uses_custom_count_per_chapter() -> None:
+    items = build_main_chapter_items_from_targets(_targets(), count_per_chapter=2)
+
+    assert items[0].count == 2
+
+
+def test_build_main_chapter_items_from_targets_returns_empty_list_when_no_targets() -> (
+    None
+):
+    empty_targets = QuizGenerationTargets(main_chapters=[])
+
+    items = build_main_chapter_items_from_targets(empty_targets)
 
     assert items == []
 
