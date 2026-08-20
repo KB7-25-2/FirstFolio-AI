@@ -7,6 +7,7 @@ from app.application.quiz_generation import (
     QuizGenerationValidationError,
 )
 from app.application.quiz_validation import normalize_quiz_prompt
+from app.domain.chunk import DocumentChunk
 from app.domain.quiz import (
     QuestionType,
     QuizBatchDuplicate,
@@ -70,6 +71,35 @@ def build_daily_general_items_from_targets(
     return items
 
 
+def build_daily_news_items_from_targets(
+    chunks: Sequence[DocumentChunk],
+    count_per_article: int = 1,
+) -> list[QuizBatchRequestItem]:
+    """등록된 뉴스 청크를 기사 단위로 묶어 DAILY_NEWS 배치 아이템을 만든다.
+
+    published_at이 있는 청크만 뉴스로 판별한다(TextbookChunker는 이 값을
+    채우지 않는다). quest_date는 그 기사의 발행일을 그대로 쓴다.
+    """
+    articles: dict[str, DocumentChunk] = {}
+    for chunk in chunks:
+        if chunk.published_at is None:
+            continue
+        articles.setdefault(chunk.document_id, chunk)
+
+    items: list[QuizBatchRequestItem] = []
+    for article_chunk in articles.values():
+        items.append(
+            QuizBatchRequestItem(
+                question_type=QuestionType.SCENARIO.value,
+                topic=article_chunk.title,
+                count=count_per_article,
+                usage_type=UsageType.DAILY_NEWS,
+                quest_date=article_chunk.published_at.date(),
+            )
+        )
+    return items
+
+
 @dataclass(frozen=True, slots=True)
 class QuizBatchRun:
     records: tuple[QuizBatchRecord, ...]
@@ -106,6 +136,7 @@ class QuizBatchService:
                     main_chapter_id=requested_item.main_chapter_id,
                     sub_chapter_id=requested_item.sub_chapter_id,
                     usage_type=requested_item.usage_type,
+                    quest_date=requested_item.quest_date,
                 )
                 record = self._generate_item(
                     batch_id=batch_id,
