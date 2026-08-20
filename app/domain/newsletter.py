@@ -87,3 +87,13 @@ class NewsletterDraft(BaseModel):
     stats_json: list[NewsletterStat] = Field(
         min_length=REQUIRED_SECTION_SIZE, max_length=REQUIRED_SECTION_SIZE
     )
+
+
+class NewsletterDeliveryResponse(BaseModel):
+    """BE `POST /api/internal/newsletters` 응답."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    newsletter_id: int
+    week_start_date: date
+    status: str
