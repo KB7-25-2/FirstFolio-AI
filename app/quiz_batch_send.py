@@ -3,11 +3,16 @@ import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 import httpx
 from pydantic import ValidationError
 
-from app.application.quiz_batch import QuizBatchService, build_batch_items_from_targets
+from app.application.quiz_batch import (
+    QuizBatchService,
+    build_batch_items_from_targets,
+    build_main_chapter_items_from_targets,
+)
 from app.application.quiz_delivery import send_records_to_be
 from app.core.config import Settings
 from app.domain.quiz import BeBatchResponse, QuestionType
@@ -20,12 +25,17 @@ _DELIVERY_OUTPUT_DIRECTORY = Path("data/local/quiz-delivery-batches")
 
 _DEFAULT_QUESTION_TYPES = (QuestionType.TRUE_FALSE, QuestionType.SINGLE_CHOICE)
 _DEFAULT_COUNT_PER_TYPE = 3
+_DEFAULT_COUNT_PER_CHAPTER = 1
+
+BatchTarget = Literal["sub_chapter", "main_chapter"]
 
 
 def run_quiz_batch_send(
     *,
+    target: BatchTarget = "sub_chapter",
     question_types: Sequence[QuestionType] = _DEFAULT_QUESTION_TYPES,
     count_per_type: int = _DEFAULT_COUNT_PER_TYPE,
+    count_per_chapter: int = _DEFAULT_COUNT_PER_CHAPTER,
     settings: Settings | None = None,
     generation_output_path: Path | None = None,
     delivery_output_path: Path | None = None,
@@ -39,7 +49,10 @@ def run_quiz_batch_send(
     generation_service = create_quiz_generation_service(runtime_settings)
 
     targets = api_client.find_targets()
-    items = build_batch_items_from_targets(targets, question_types, count_per_type)
+    if target == "main_chapter":
+        items = build_main_chapter_items_from_targets(targets, count_per_chapter)
+    else:
+        items = build_batch_items_from_targets(targets, question_types, count_per_type)
 
     if not items:
         raise ValueError("생성 대상 단원이 없습니다.")
@@ -69,17 +82,34 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--target",
+        dest="target",
+        choices=["sub_chapter", "main_chapter"],
+        default="sub_chapter",
+        help=(
+            "배치 대상 (기본: sub_chapter). "
+            "main_chapter는 대단원별 SCENARIO 문항만 생성합니다."
+        ),
+    )
+    parser.add_argument(
         "--question-types",
         dest="question_types",
         default=",".join(t.value for t in _DEFAULT_QUESTION_TYPES),
-        help="쉼표로 구분한 문제 유형 목록 (기본: TRUE_FALSE,SINGLE_CHOICE)",
+        help="쉼표로 구분한 문제 유형 목록 (기본: TRUE_FALSE,SINGLE_CHOICE, sub_chapter 대상에만 적용)",
     )
     parser.add_argument(
         "--count-per-type",
         dest="count_per_type",
         type=int,
         default=_DEFAULT_COUNT_PER_TYPE,
-        help="소단원 하나당 유형별 생성 개수 (기본: 3)",
+        help="소단원 하나당 유형별 생성 개수 (기본: 3, sub_chapter 대상에만 적용)",
+    )
+    parser.add_argument(
+        "--count-per-chapter",
+        dest="count_per_chapter",
+        type=int,
+        default=_DEFAULT_COUNT_PER_CHAPTER,
+        help="대단원 하나당 시나리오 생성 개수 (기본: 1, main_chapter 대상에만 적용)",
     )
     return parser
 
@@ -94,8 +124,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         responses = run_quiz_batch_send(
+            target=arguments.target,
             question_types=question_types,
             count_per_type=arguments.count_per_type,
+            count_per_chapter=arguments.count_per_chapter,
         )
     except (httpx.HTTPError, ValidationError, ValueError, OSError) as error:
         print(
