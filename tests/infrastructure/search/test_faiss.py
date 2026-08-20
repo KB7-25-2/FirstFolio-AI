@@ -95,6 +95,12 @@ def test_limit_results_to_stored_vector_count() -> None:
     assert len(results) == 3
 
 
+def test_report_stored_vector_count() -> None:
+    vector_search = create_vector_search()
+
+    assert vector_search.vector_count == 3
+
+
 def test_return_empty_results_for_empty_query() -> None:
     vector_search = create_vector_search()
 

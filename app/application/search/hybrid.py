@@ -22,10 +22,13 @@ class HybridSearch:
         self,
         query: str,
     ) -> list[SearchResult]:
+        candidate_top_k = self._settings.search_candidate_top_k
+        rrf_k = self._settings.search_rrf_k
+
         bm25_results = (
             self._bm25_search.search(
                 query=query,
-                top_k=self._settings.search_top_k,
+                top_k=candidate_top_k,
             )
             if self._settings.bm25_weight > 0
             else []
@@ -33,7 +36,7 @@ class HybridSearch:
         faiss_results = (
             self._faiss_search.search(
                 query=query,
-                top_k=self._settings.search_top_k,
+                top_k=candidate_top_k,
             )
             if self._settings.faiss_weight > 0
             else []
@@ -49,7 +52,7 @@ class HybridSearch:
             start=1,
         ):
             chunk_key = result.chunk.chunk_key
-            rank_score = self._settings.bm25_weight / rank
+            rank_score = self._settings.bm25_weight / (rrf_k + rank)
 
             scores_by_chunk_key[chunk_key] = (
                 scores_by_chunk_key.get(chunk_key, 0.0) + rank_score
@@ -69,7 +72,7 @@ class HybridSearch:
                 start=1,
             ):
                 chunks_by_chunk_key[result.chunk_key] = chunk
-                rank_score = self._settings.faiss_weight / rank
+                rank_score = self._settings.faiss_weight / (rrf_k + rank)
 
                 scores_by_chunk_key[result.chunk_key] = (
                     scores_by_chunk_key.get(result.chunk_key, 0.0) + rank_score
