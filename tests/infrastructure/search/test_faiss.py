@@ -101,6 +101,28 @@ def test_report_stored_vector_count() -> None:
     assert vector_search.vector_count == 3
 
 
+def test_embed_heading_prefixed_text_when_chunk_has_heading() -> None:
+    chunk = DocumentChunk(
+        document_id="deposit",
+        chunk_key="deposit:0",
+        sequence=0,
+        content="이 상품은 안전하게 운용할 수 있다.",
+        title="예금",
+        source="deposit.txt",
+        heading="예금의 정의",
+    )
+    embedding_client = ControlledEmbeddingClient(
+        {"예금의 정의\n이 상품은 안전하게 운용할 수 있다.": [1.0, 0.0]}
+    )
+
+    vector_search = FaissVectorSearch(
+        chunks=[chunk],
+        embedding_client=embedding_client,
+    )
+
+    assert vector_search.vector_count == 1
+
+
 def test_return_empty_results_for_empty_query() -> None:
     vector_search = create_vector_search()
 
