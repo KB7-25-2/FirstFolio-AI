@@ -54,7 +54,9 @@ _TYPE_RULES = {
         "scenario_json에 title, narrative, persona(name, age, job), "
         "requirements(assets, risk, goal), market(title, bullets), "
         "constraints, paper_title을 모두 작성한다. persona는 가상 인물의 이름·나이·"
-        "직업이고, requirements는 그 인물의 보유 자산·위험 허용도·목표이며, market은 "
+        "직업이고, persona.name은 성씨 한 글자와 이름 '자' 한 글자로 이루어진 "
+        '외자 이름으로 작성한다(예: "김자", "이자", "박자"). 성씨로 "고"는 사용하지 '
+        "않는다. requirements는 그 인물의 보유 자산·위험 허용도·목표이며, market은 "
         "판단에 참고할 시장 정보의 제목·핵심 항목이다. constraints에는 "
         "정답을 하나로 결정하는 데 필요한 기간, 유동성, 위험 허용 범위 같은 조건을 "
         "명시하고 조건만으로 최선의 선택을 판단할 수 있게 한다. paper_title은 이 "

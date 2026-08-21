@@ -174,6 +174,17 @@ def test_build_true_false_prompt_with_true_target_omits_rebuttal_rule() -> None:
     assert "뭉뚱그려 서술하지 않는다" not in prompt
 
 
+def test_build_scenario_prompt_requires_single_syllable_persona_name() -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.SCENARIO,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+    )
+
+    assert "이름 '자' 한 글자로 이루어진" in prompt
+    assert '성씨로 "고"는 사용하지' in prompt
+
+
 def test_build_single_choice_prompt_requires_specific_explanation() -> None:
     prompt = build_quiz_generation_prompt(
         question_type=QuestionType.SINGLE_CHOICE,
