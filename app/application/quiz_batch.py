@@ -10,6 +10,7 @@ from app.application.quiz_validation import normalize_quiz_prompt
 from app.domain.chunk import DocumentChunk
 from app.domain.quiz import (
     QuestionType,
+    Quiz,
     QuizBatchDuplicate,
     QuizBatchError,
     QuizBatchItemInput,
@@ -278,6 +279,7 @@ class QuizBatchService:
                 errors=list(error.errors),
                 reason=error.reason or str(error),
                 unsupported_claims=list(error.unsupported_claims),
+                attempted_quiz=error.quiz,
             )
         except Exception:
             return _failure_record(
@@ -309,6 +311,7 @@ def _failure_record(
     errors: list[str],
     reason: str,
     unsupported_claims: list[str] | None = None,
+    attempted_quiz: Quiz | None = None,
 ) -> QuizBatchRecord:
     return QuizBatchRecord(
         batch_id=batch_id,
@@ -321,6 +324,7 @@ def _failure_record(
             errors=errors,
             reason=reason,
             unsupported_claims=unsupported_claims or [],
+            attempted_quiz=attempted_quiz,
         ),
         duplicate=None,
     )

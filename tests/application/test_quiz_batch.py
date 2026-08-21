@@ -290,9 +290,31 @@ def test_continue_after_validation_and_unexpected_failures() -> None:
     assert run.records[0].error.errors == ["search_result_required"]
     assert run.records[1].error.errors == ["quiz_generation_failed"]
     assert "외부 서비스 상세 오류" not in run.records[1].error.reason
+    assert run.records[0].error.attempted_quiz is None
+    assert run.records[1].error.attempted_quiz is None
     assert run.summary.failed == 2
     assert run.summary.succeeded == 1
     assert generation_service.generate.call_count == 3
+
+
+def test_capture_attempted_quiz_on_generation_validation_failure() -> None:
+    generation_service = Mock(spec=QuizGenerationService)
+    attempted_quiz = _quiz_result(QuestionType.SINGLE_CHOICE, "인용에 실패한 문항").quiz
+    generation_service.generate.side_effect = QuizGenerationValidationError(
+        ["citation_evidence_not_found:97:268"],
+        stage="generation_validation",
+        quiz=attempted_quiz,
+    )
+    service = _batch_service(generation_service)
+
+    run = service.generate(
+        [QuizBatchRequestItem(question_type="SINGLE_CHOICE", topic="주제")]
+    )
+
+    (record,) = run.records
+    assert record.status == QuizBatchStatus.FAILED
+    assert record.error.attempted_quiz == attempted_quiz
+    assert record.error.attempted_quiz.prompt == "인용에 실패한 문항"
 
 
 def test_record_invalid_type_and_blank_topic_without_service_call() -> None:

@@ -177,6 +177,7 @@ class QuizBatchError(BaseModel):
     errors: list[str] = Field(min_length=1)
     reason: str = Field(min_length=1)
     unsupported_claims: list[str]
+    attempted_quiz: Quiz | None = None
 
 
 class QuizBatchDuplicate(BaseModel):
