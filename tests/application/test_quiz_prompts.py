@@ -185,6 +185,54 @@ def test_build_exact_sentence_candidates_from_top_five_chunks() -> None:
     assert "47:5" not in candidates
 
 
+def test_exclude_sentence_containing_quote_from_citation_candidates() -> None:
+    chunks = _chunks(count=1)
+    chunks[0] = DocumentChunk(
+        document_id="47",
+        chunk_key="47:0",
+        sequence=0,
+        content='정상적인 문장이다.\n따옴표가 낀 "문장이다.\n또 다른 정상 문장이다.',
+        title="금융 교과서",
+        source="financial_textbook.txt",
+    )
+
+    candidates = build_citation_candidates(chunks)
+
+    assert candidates["47:0"] == ("정상적인 문장이다.", "또 다른 정상 문장이다.")
+
+
+def test_exclude_sentence_containing_backslash_from_citation_candidates() -> None:
+    chunks = _chunks(count=1)
+    chunks[0] = DocumentChunk(
+        document_id="47",
+        chunk_key="47:0",
+        sequence=0,
+        content="정상적인 문장이다.\n역슬래시\\가 낀 문장이다.",
+        title="금융 교과서",
+        source="financial_textbook.txt",
+    )
+
+    candidates = build_citation_candidates(chunks)
+
+    assert candidates["47:0"] == ("정상적인 문장이다.",)
+
+
+def test_return_no_candidates_when_only_sentence_is_unsafe() -> None:
+    chunks = _chunks(count=1)
+    chunks[0] = DocumentChunk(
+        document_id="47",
+        chunk_key="47:0",
+        sequence=0,
+        content='온통 "따옴표"뿐인 문장이다.',
+        title="금융 교과서",
+        source="financial_textbook.txt",
+    )
+
+    candidates = build_citation_candidates(chunks)
+
+    assert candidates["47:0"] == ()
+
+
 def test_reject_blank_generation_topic() -> None:
     with pytest.raises(
         ValueError,

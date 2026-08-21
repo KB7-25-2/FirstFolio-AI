@@ -328,11 +328,28 @@ def build_citation_candidates(
     }
 
 
+_UNSAFE_LITERAL_PATTERN = re.compile(r'["\\]')
+
+
 def _extract_exact_sentences(content: str) -> tuple[str, ...]:
+    # OpenAI structured output(strict) 인용 후보 목록은 값 하나하나가 JSON
+    # 문자열 리터럴로 스키마에 들어간다. 원문 OCR 잡음으로 낀 큰따옴표·
+    # 역슬래시가 섞인 문장은 그대로 넘기면 스키마 전체가 거부되므로,
+    # 그런 문장은 인용 후보에서 제외한다. 원본 chunk.content 자체는
+    # 그대로 두고 후보 목록에서만 뺀다.
     sentences = tuple(
         match.group().strip()
         for line in content.splitlines()
         for match in re.finditer(r".+?(?:[.!?](?=\s|$)|$)", line)
-        if match.group().strip()
+        if match.group().strip() and not _UNSAFE_LITERAL_PATTERN.search(match.group())
     )
-    return sentences or (content.strip(),)
+
+    if sentences:
+        return sentences
+
+    stripped_content = content.strip()
+
+    if stripped_content and not _UNSAFE_LITERAL_PATTERN.search(stripped_content):
+        return (stripped_content,)
+
+    return ()

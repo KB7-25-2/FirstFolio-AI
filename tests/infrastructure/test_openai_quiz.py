@@ -159,6 +159,114 @@ def test_constrain_citation_to_retrieved_chunk_keys(
         output_model.model_validate(invalid_payload)
 
 
+def test_reject_evidence_text_borrowed_from_a_different_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """실제로 관측된 실패 패턴: chunk_key는 실제 존재하는 값이지만
+    evidence_text가 다른 청크의 후보 문장인 경우. chunk_key만 제약하던
+    이전 구현에서는 이 조합이 그대로 통과했다."""
+    client, create_chat_client, quiz_client, _ = _create_client(monkeypatch)
+    quiz = _quiz()
+    quiz_client.invoke.return_value = {
+        "raw": _raw_response(),
+        "parsed": quiz,
+        "parsing_error": None,
+    }
+
+    client.generate_quiz(
+        "퀴즈 생성 프롬프트",
+        _citation_candidates(),
+    )
+
+    output_model = (
+        create_chat_client.return_value.with_structured_output.call_args.args[0]
+    )
+    mismatched_payload = quiz.model_dump()
+    mismatched_payload["citations"][0]["chunk_key"] = "47:0"
+    mismatched_payload["citations"][0]["evidence_text"] = (
+        "적금은 일정한 금액을 정기적으로 납입한다."
+    )
+
+    with pytest.raises(ValidationError):
+        output_model.model_validate(mismatched_payload)
+
+
+def test_accept_citation_matching_a_different_valid_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, create_chat_client, quiz_client, _ = _create_client(monkeypatch)
+    quiz = _quiz()
+    quiz_client.invoke.return_value = {
+        "raw": _raw_response(),
+        "parsed": quiz,
+        "parsing_error": None,
+    }
+
+    client.generate_quiz(
+        "퀴즈 생성 프롬프트",
+        _citation_candidates(),
+    )
+
+    output_model = (
+        create_chat_client.return_value.with_structured_output.call_args.args[0]
+    )
+    valid_payload = quiz.model_dump()
+    valid_payload["citations"][0]["chunk_key"] = "47:1"
+    valid_payload["citations"][0]["evidence_text"] = (
+        "적금은 일정한 금액을 정기적으로 납입한다."
+    )
+
+    output_model.model_validate(valid_payload)
+
+
+def test_reject_evidence_text_not_in_any_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, create_chat_client, quiz_client, _ = _create_client(monkeypatch)
+    quiz = _quiz()
+    quiz_client.invoke.return_value = {
+        "raw": _raw_response(),
+        "parsed": quiz,
+        "parsing_error": None,
+    }
+
+    client.generate_quiz(
+        "퀴즈 생성 프롬프트",
+        _citation_candidates(),
+    )
+
+    output_model = (
+        create_chat_client.return_value.with_structured_output.call_args.args[0]
+    )
+    fabricated_payload = quiz.model_dump()
+    fabricated_payload["citations"][0]["evidence_text"] = "근거에 없는 새 문장이다."
+
+    with pytest.raises(ValidationError):
+        output_model.model_validate(fabricated_payload)
+
+
+def test_build_output_model_with_single_citation_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, create_chat_client, quiz_client, _ = _create_client(monkeypatch)
+    quiz = _quiz()
+    quiz_client.invoke.return_value = {
+        "raw": _raw_response(),
+        "parsed": quiz,
+        "parsing_error": None,
+    }
+
+    client.generate_quiz(
+        "퀴즈 생성 프롬프트",
+        {"47:0": ("예금은 금융기관에 돈을 맡기는 상품이다.",)},
+    )
+
+    output_model = (
+        create_chat_client.return_value.with_structured_output.call_args.args[0]
+    )
+    output_model.model_validate(quiz.model_dump())
+
+
 def test_validate_grounding_with_token_usage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
