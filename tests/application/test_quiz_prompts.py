@@ -92,6 +92,34 @@ def test_build_prompt_uses_overridden_usage_type_when_given() -> None:
     assert "사용 목적: DAILY_GENERAL" in prompt
 
 
+def test_build_prompt_includes_existing_prompts_when_given() -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.SINGLE_CHOICE,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+        existing_prompts=(
+            "예금에 대한 설명으로 옳은 것은?",
+            "적금의 특징으로 옳은 것은?",
+        ),
+    )
+
+    assert "이미 생성된 문항" in prompt
+    assert "예금에 대한 설명으로 옳은 것은?" in prompt
+    assert "적금의 특징으로 옳은 것은?" in prompt
+    assert "다른 근거·다른 초점" in prompt
+
+
+def test_build_prompt_omits_existing_prompts_section_when_empty() -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.SINGLE_CHOICE,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+    )
+
+    assert "이미 생성된 문항" not in prompt
+    assert "existing_prompt" not in prompt
+
+
 @pytest.mark.parametrize(
     ("target_answer", "expected_truth_label"),
     [("O", "참"), ("X", "거짓")],

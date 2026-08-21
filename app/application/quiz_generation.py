@@ -3,7 +3,9 @@ from collections.abc import Sequence
 from time import monotonic_ns
 
 from app.application.ports.chunk_repository import ChunkRepository
+from app.application.ports.embedding import EmbeddingClient
 from app.application.ports.quiz_model import QuizModelClient
+from app.application.quiz_deduplication import find_semantic_duplicate
 from app.application.quiz_prompts import (
     build_citation_candidates,
     build_grounding_validation_prompt,
@@ -39,12 +41,14 @@ class QuizGenerationValidationError(ValueError):
         retrieved_chunks: Sequence[DocumentChunk] = (),
         quiz: Quiz | None = None,
         grounding_validation: GroundingValidation | None = None,
+        duplicate_of_prompt: str | None = None,
     ) -> None:
         self.errors = tuple(errors)
         self.stage = stage
         self.retrieved_chunks = tuple(retrieved_chunks)
         self.quiz = quiz
         self.grounding_validation = grounding_validation
+        self.duplicate_of_prompt = duplicate_of_prompt
         self.reason = (
             grounding_validation.reason if grounding_validation is not None else None
         )
@@ -63,12 +67,15 @@ class QuizGenerationService:
         hybrid_search: HybridSearch,
         chunk_repository: ChunkRepository,
         model_client: QuizModelClient,
+        embedding_client: EmbeddingClient,
         rng: random.Random | None = None,
     ) -> None:
         self._model_name = settings.generation_model
         self._hybrid_search = hybrid_search
         self._chunk_repository = chunk_repository
         self._model_client = model_client
+        self._embedding_client = embedding_client
+        self._duplicate_similarity_threshold = settings.duplicate_similarity_threshold
         self._rng = rng or random.Random()
 
     def generate(
@@ -77,10 +84,14 @@ class QuizGenerationService:
         question_type: QuestionType,
         topic: str,
         existing_prompts: Sequence[str] = (),
+        excluded_chunk_keys: Sequence[str] = (),
         usage_type: UsageType | None = None,
     ) -> QuizGenerationResult:
         started_at = monotonic_ns()
-        search_results = self._hybrid_search.search(topic)
+        search_results = self._hybrid_search.search(
+            topic,
+            exclude_chunk_keys=excluded_chunk_keys,
+        )
         retrieved_chunks = [result.chunk for result in search_results[:5]]
 
         if not retrieved_chunks:
@@ -100,6 +111,7 @@ class QuizGenerationService:
             retrieved_chunks=retrieved_chunks,
             true_false_target=true_false_target,
             usage_type=usage_type,
+            existing_prompts=existing_prompts,
         )
         generation_result = self._model_client.generate_quiz(
             generation_prompt,
@@ -123,6 +135,27 @@ class QuizGenerationService:
                 stage="generation_validation",
                 retrieved_chunks=retrieved_chunks,
                 quiz=quiz,
+                duplicate_of_prompt=(
+                    quiz.prompt
+                    if "duplicate_prompt" in rule_validation.errors
+                    else None
+                ),
+            )
+
+        semantic_duplicate_of = find_semantic_duplicate(
+            quiz.prompt,
+            existing_prompts,
+            self._embedding_client,
+            self._duplicate_similarity_threshold,
+        )
+
+        if semantic_duplicate_of is not None:
+            raise QuizGenerationValidationError(
+                ["semantic_duplicate_prompt"],
+                stage="generation_validation",
+                retrieved_chunks=retrieved_chunks,
+                quiz=quiz,
+                duplicate_of_prompt=semantic_duplicate_of,
             )
 
         unsupported_numeric_claims = find_unsupported_numeric_claims(

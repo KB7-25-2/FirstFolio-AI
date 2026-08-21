@@ -62,6 +62,7 @@ def build_quiz_generation_prompt(
     retrieved_chunks: Sequence[DocumentChunk],
     true_false_target: str | None = None,
     usage_type: UsageType | None = None,
+    existing_prompts: Sequence[str] = (),
 ) -> str:
     normalized_topic = topic.strip()
 
@@ -80,6 +81,7 @@ def build_quiz_generation_prompt(
         if question_type == QuestionType.TRUE_FALSE
         else _TYPE_RULES[question_type]
     )
+    existing_prompts_section = _format_existing_prompts(existing_prompts)
 
     return f"""
 당신은 고등학생을 위한 금융교육 퀴즈 생성기다.
@@ -109,13 +111,29 @@ def build_quiz_generation_prompt(
 - 실제 투자상품의 매수나 매도를 권유하지 않는다.
 - 정의되지 않은 JSON 필드를 추가하지 않는다.
 - JSON 이외의 설명이나 마크다운을 출력하지 않는다.
-
+{existing_prompts_section}
 출력 JSON Schema:
 {output_schema}
 
 검색 근거:
 {evidence}
 """.strip()
+
+
+def _format_existing_prompts(existing_prompts: Sequence[str]) -> str:
+    if not existing_prompts:
+        return ""
+
+    formatted_prompts = "\n".join(
+        f'<existing_prompt index="{index}">{prompt}</existing_prompt>'
+        for index, prompt in enumerate(existing_prompts, start=1)
+    )
+
+    return f"""
+같은 주제로 이미 생성된 문항 (표현만 바꾸지 말고 다른 근거·다른 초점으로
+작성한다. 아래 문항과 질문 의도가 같은 문항을 만들지 않는다):
+{formatted_prompts}
+"""
 
 
 def _grounding_type_rule(quiz: Quiz) -> str:

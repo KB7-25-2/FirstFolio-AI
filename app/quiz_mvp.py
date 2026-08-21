@@ -83,6 +83,7 @@ def create_quiz_generation_service(
         hybrid_search=hybrid_search,
         chunk_repository=chunk_repository,
         model_client=model_client,
+        embedding_client=embedding_client,
     )
 
 

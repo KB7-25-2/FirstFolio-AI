@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     search_rrf_k: int = Field(default=60, ge=1)
     bm25_weight: float = Field(default=0.7, ge=0, le=1)
     faiss_weight: float = Field(default=0.3, ge=0, le=1)
+    duplicate_similarity_threshold: float = Field(default=0.92, ge=0, le=1)
     embedding_model: str = "text-embedding-3-small"
     generation_model: str = "gpt-4o-mini"
     openai_timeout_seconds: float = Field(default=30.0, gt=0)

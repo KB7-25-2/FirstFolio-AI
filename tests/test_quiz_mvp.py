@@ -198,6 +198,7 @@ def test_create_service_with_mysql_and_search_components(
         hybrid_search=hybrid_search,
         chunk_repository=repository,
         model_client=model_client,
+        embedding_client=embedding_client,
     )
 
 
