@@ -20,7 +20,7 @@ class BM25Search:
         self._tokenizer = tokenizer
 
         tokenized_chunks = [
-            self._tokenizer.tokenize(chunk.content) for chunk in self._chunks
+            self._tokenizer.tokenize(chunk.searchable_text()) for chunk in self._chunks
         ]
 
         if not any(tokenized_chunks):

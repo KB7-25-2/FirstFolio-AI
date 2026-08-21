@@ -21,7 +21,7 @@ class FaissVectorSearch:
             raise ValueError("FAISS 색인을 생성할 문서 청크가 없습니다.")
 
         embeddings = embedding_client.embed_documents(
-            [chunk.content for chunk in chunks]
+            [chunk.searchable_text() for chunk in chunks]
         )
 
         if len(embeddings) != len(chunks):

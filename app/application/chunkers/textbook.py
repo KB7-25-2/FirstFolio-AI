@@ -1,6 +1,7 @@
 import re
 from dataclasses import replace
 
+from app.application.chunkers.merge import merge_short_chunks
 from app.application.ports.document_chunker import DocumentChunker
 from app.domain.chunk import DocumentChunk
 from app.domain.document import SourceDocument
@@ -48,7 +49,7 @@ class TextbookChunker:
             )
             chunks.append(replace(chunk, heading=heading, metadata=metadata))
 
-        return chunks
+        return merge_short_chunks(chunks)
 
     @staticmethod
     def _build_metadata(
