@@ -1,8 +1,11 @@
+import functools
+import operator
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, Field, create_model
 
 from app.application.ports.quiz_model import (
     GroundingModelResult,
@@ -75,22 +78,62 @@ class OpenAIQuizModelClient:
 def _build_quiz_output_model(
     citation_candidates: Mapping[str, Sequence[str]],
 ) -> type[Quiz]:
-    chunk_keys = tuple(citation_candidates)
+    citation_models = tuple(
+        _build_citation_model(chunk_key, candidates)
+        for chunk_key, candidates in citation_candidates.items()
+        if candidates
+    )
 
-    if not chunk_keys:
+    if not citation_models:
         raise ValueError("퀴즈 출처 후보는 비어 있을 수 없습니다.")
 
-    chunk_key_type = Literal.__getitem__(chunk_keys)
-    citation_model = create_model(
-        "ConstrainedQuizCitation",
-        __base__=QuizCitation,
-        chunk_key=(chunk_key_type, ...),
+    # chunk_key와 evidence_text를 청크별로 한 쌍으로 묶어야 한다. 두 필드를
+    # 따로 제약하면(예: chunk_key만 Literal로 제한) "존재하는 chunk_key +
+    # 남의 청크에서 가져온 evidence_text" 조합을 LLM이 만들 수 있다.
+    # 청크마다 별도 모델을 만들고 Union으로 묶어야 그 조합 자체가
+    # 스키마에서 불가능해진다.
+    citation_type = (
+        citation_models[0]
+        if len(citation_models) == 1
+        else functools.reduce(operator.or_, citation_models)
     )
+
     return create_model(
         "ConstrainedQuiz",
         __base__=Quiz,
-        citations=(list[citation_model], ...),
+        citations=(list[citation_type], ...),
     )
+
+
+def _build_citation_model(
+    chunk_key: str,
+    candidates: Sequence[str],
+) -> type[QuizCitation]:
+    evidence_text_type = Literal.__getitem__(tuple(candidates))
+    safe_name = re.sub(r"\W", "_", chunk_key)
+
+    return create_model(
+        f"Citation_{safe_name}",
+        __base__=QuizCitation,
+        chunk_key=(
+            Literal[chunk_key],
+            Field(..., json_schema_extra=_use_enum_instead_of_const),
+        ),
+        evidence_text=(
+            evidence_text_type,
+            Field(..., json_schema_extra=_use_enum_instead_of_const),
+        ),
+    )
+
+
+def _use_enum_instead_of_const(schema: dict[str, Any]) -> None:
+    # pydantic은 값이 하나뿐인 Literal을 JSON Schema의 "const"로 내보내는데,
+    # OpenAI structured output strict 모드는 "const"를 지원하지 않아 스키마
+    # 전체가 거부된다("Invalid schema" 경고, 실제로는 조용히 다른 방식으로
+    # 폴백해 검증 없이 호출됨). "enum": [값]은 의미가 같으면서 지원되는
+    # 키워드라 여기로 바꿔치기한다.
+    if "const" in schema:
+        schema["enum"] = [schema.pop("const")]
 
 
 def _parse_structured_response[StructuredModel: BaseModel](
