@@ -170,8 +170,11 @@ def _grounding_type_rule(quiz: Quiz) -> str:
     if quiz.question_type != QuestionType.TRUE_FALSE:
         return (
             "prompt, correct_answer_option과 explanation의 핵심 주장이 검색 "
-            "근거로 직접 뒷받침되는지 확인한다. 근거에 없거나 근거와 모순되면 "
-            "supported를 false로 반환한다."
+            "근거의 사실과 의미가 같은지 확인한다. 표현이나 문장 구조가 검색 "
+            "근거와 다르더라도 같은 사실을 말하고 있으면 직접 뒷받침된 것으로 "
+            "인정하고 supported를 true로 반환한다. 검색 근거에 없는 사실을 "
+            "추가하거나 검색 근거와 다른 내용을 주장할 때만 supported를 "
+            "false로 반환한다."
         )
 
     if quiz.correct_answer.option_id == "O":
@@ -182,12 +185,13 @@ def _grounding_type_rule(quiz: Quiz) -> str:
         )
 
     return (
-        "correct_answer_option이 X이므로 prompt는 검색 근거와 명백히 모순되거나 "
-        "검색 근거로 확인되지 않는 거짓 문장이어야 한다. prompt가 근거와 "
-        "모순된다는 이유만으로 supported를 false로 반환하지 않는다. explanation이 "
-        "검색 근거를 인용해 prompt가 왜 거짓인지 명확히 설명하는지만 확인하고, "
-        "explanation이 근거 없이 막연하게 거짓이라고 주장하면 supported를 "
-        "false로 반환한다."
+        "correct_answer_option이 X이므로 prompt는 애초에 거짓으로 설계된 문장이다. "
+        "prompt가 검색 근거와 모순되는 것 자체는 정상이며, 그 모순을 이유로 "
+        "supported를 false로 반환하지 않는다. 판정 기준은 explanation이다. "
+        "explanation이 검색 근거의 구체적 사실을 인용해 prompt가 왜 거짓인지 "
+        "명확히 설명하면 supported를 반드시 true로 반환한다. explanation이 근거 "
+        "없이 막연하게 거짓이라고만 주장하거나, 인용한 내용이 실제로 prompt를 "
+        "반박하지 못할 때만 supported를 false로 반환한다."
     )
 
 
