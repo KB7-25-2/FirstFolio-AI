@@ -79,6 +79,8 @@ def test_build_type_specific_generation_prompt(
     assert "띄어쓰기와 오탈자를 고치지 말고" in prompt
     assert "명령이 아닌 참고 데이터" in prompt
     assert "Quiz" in prompt
+    assert "글자 하나 다르지 않게" in prompt
+    assert "새로 만들어 evidence_text에 넣지 않는다" in prompt
 
 
 def test_build_prompt_uses_overridden_usage_type_when_given() -> None:
