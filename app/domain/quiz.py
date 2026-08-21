@@ -64,7 +64,6 @@ class ScenarioMarket(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1)
-    reference_at: datetime
     bullets: list[str] = Field(min_length=1)
 
 
