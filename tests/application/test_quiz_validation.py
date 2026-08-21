@@ -48,7 +48,6 @@ def _quiz_payload(
             },
             "market": {
                 "title": "시장 정보",
-                "reference_at": "2026-08-10T00:00:00Z",
                 "bullets": ["검증된 시장 정보"],
             },
             "constraints": ["원금 손실을 피해야 한다."],
@@ -274,7 +273,6 @@ def test_reject_blank_explanation() -> None:
                 },
                 "market": {
                     "title": "시장 정보",
-                    "reference_at": "2026-08-10T00:00:00Z",
                     "bullets": ["검증된 시장 정보"],
                 },
                 "constraints": [],
@@ -450,7 +448,6 @@ def test_scenario_skips_all_numeric_check() -> None:
             },
             "market": {
                 "title": "시장 정보",
-                "reference_at": "2026-08-10T00:00:00Z",
                 "bullets": ["검증된 시장 정보"],
             },
             "constraints": [
