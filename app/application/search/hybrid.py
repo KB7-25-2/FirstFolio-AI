@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from app.application.ports.chunk_repository import ChunkRepository
 from app.core.config import Settings
 from app.domain.search import SearchResult
@@ -21,6 +23,8 @@ class HybridSearch:
     def search(
         self,
         query: str,
+        *,
+        exclude_chunk_keys: Sequence[str] = (),
     ) -> list[SearchResult]:
         candidate_top_k = self._settings.search_candidate_top_k
         rrf_k = self._settings.search_rrf_k
@@ -78,12 +82,14 @@ class HybridSearch:
                     scores_by_chunk_key.get(result.chunk_key, 0.0) + rank_score
                 )
 
+        excluded_chunk_keys = set(exclude_chunk_keys)
         combined_results = [
             SearchResult(
                 chunk=chunks_by_chunk_key[chunk_key],
                 score=score,
             )
             for chunk_key, score in scores_by_chunk_key.items()
+            if chunk_key not in excluded_chunk_keys
         ]
         combined_results.sort(
             key=lambda result: (

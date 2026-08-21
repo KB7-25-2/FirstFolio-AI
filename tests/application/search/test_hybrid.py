@@ -367,3 +367,138 @@ def test_return_empty_list_when_both_searches_have_no_results() -> None:
         query="검색되지 않는 질문",
         top_k=5,
     )
+
+
+def test_exclude_chunk_keys_from_final_results() -> None:
+    deposit_chunk = create_chunk("deposit", "예금")
+    stock_chunk = create_chunk("stock", "주식")
+    bond_chunk = create_chunk("bond", "채권")
+
+    bm25_search = Mock()
+    bm25_search.search.return_value = [
+        SearchResult(
+            chunk=deposit_chunk,
+            score=10.0,
+        ),
+        SearchResult(
+            chunk=stock_chunk,
+            score=5.0,
+        ),
+        SearchResult(
+            chunk=bond_chunk,
+            score=3.0,
+        ),
+    ]
+
+    faiss_search = Mock()
+    faiss_search.search.return_value = []
+
+    repository = InMemoryChunkRepository()
+    repository.save_all([deposit_chunk, stock_chunk, bond_chunk])
+
+    settings = Settings(
+        search_top_k=5,
+        search_candidate_top_k=5,
+        search_rrf_k=1,
+        bm25_weight=0.7,
+        faiss_weight=0.3,
+        _env_file=None,
+    )
+    hybrid_search = HybridSearch(
+        settings=settings,
+        bm25_search=bm25_search,
+        faiss_search=faiss_search,
+        chunk_repository=repository,
+    )
+
+    results = hybrid_search.search(
+        "금융상품",
+        exclude_chunk_keys=["deposit:0"],
+    )
+
+    assert [result.chunk.chunk_key for result in results] == [
+        "stock:0",
+        "bond:0",
+    ]
+
+
+def test_exclude_chunk_keys_pulls_up_next_candidate_within_pool() -> None:
+    deposit_chunk = create_chunk("deposit", "예금")
+    stock_chunk = create_chunk("stock", "주식")
+
+    bm25_search = Mock()
+    bm25_search.search.return_value = [
+        SearchResult(
+            chunk=deposit_chunk,
+            score=10.0,
+        ),
+        SearchResult(
+            chunk=stock_chunk,
+            score=5.0,
+        ),
+    ]
+
+    faiss_search = Mock()
+    faiss_search.search.return_value = []
+
+    repository = InMemoryChunkRepository()
+    repository.save_all([deposit_chunk, stock_chunk])
+
+    settings = Settings(
+        search_top_k=1,
+        search_candidate_top_k=5,
+        search_rrf_k=1,
+        bm25_weight=0.7,
+        faiss_weight=0.3,
+        _env_file=None,
+    )
+    hybrid_search = HybridSearch(
+        settings=settings,
+        bm25_search=bm25_search,
+        faiss_search=faiss_search,
+        chunk_repository=repository,
+    )
+
+    results = hybrid_search.search(
+        "금융상품",
+        exclude_chunk_keys=["deposit:0"],
+    )
+
+    assert [result.chunk.chunk_key for result in results] == ["stock:0"]
+
+
+def test_no_exclusion_by_default() -> None:
+    deposit_chunk = create_chunk("deposit", "예금")
+
+    bm25_search = Mock()
+    bm25_search.search.return_value = [
+        SearchResult(
+            chunk=deposit_chunk,
+            score=10.0,
+        ),
+    ]
+
+    faiss_search = Mock()
+    faiss_search.search.return_value = []
+
+    repository = InMemoryChunkRepository()
+    repository.save_all([deposit_chunk])
+
+    settings = Settings(
+        search_top_k=5,
+        search_candidate_top_k=5,
+        search_rrf_k=1,
+        bm25_weight=0.7,
+        faiss_weight=0.3,
+        _env_file=None,
+    )
+    hybrid_search = HybridSearch(
+        settings=settings,
+        bm25_search=bm25_search,
+        faiss_search=faiss_search,
+        chunk_repository=repository,
+    )
+
+    results = hybrid_search.search("금융상품")
+
+    assert [result.chunk.chunk_key for result in results] == ["deposit:0"]
