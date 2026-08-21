@@ -24,17 +24,30 @@ def _true_false_rule(target_answer: str | None) -> str:
         return base_rule
 
     truth_label = "참" if target_answer == "O" else "거짓"
-    return (
+    type_rule = (
         f"{base_rule} 이번 문제의 correct_answer.option_id는 반드시 "
         f'"{target_answer}"이어야 하며, prompt는 검색 근거로 확인되는 '
         f"{truth_label} 문장으로 작성한다."
+    )
+
+    if target_answer != "X":
+        return type_rule
+
+    return (
+        f"{type_rule} explanation은 prompt의 어느 부분이 검색 근거의 어떤 "
+        "구체적 사실(수치, 조건, 정의 등)과 어긋나는지 그 사실을 직접 인용해 "
+        '설명한다. "다양한 요인이 있다", "여러 조건에 따라 다르다"처럼 근거를 '
+        "인용하지 않고 뭉뚱그려 서술하지 않는다."
     )
 
 
 _TYPE_RULES = {
     QuestionType.SINGLE_CHOICE: (
         "options는 option_id가 문자열 1, 2, 3, 4인 정확히 네 개로 구성하고 "
-        "scenario_json은 null로 반환한다."
+        "scenario_json은 null로 반환한다. explanation은 정답 선택지를 뒷받침하는 "
+        "검색 근거의 구체적 사실(수치, 조건, 정의 등)을 직접 인용해 왜 그 "
+        '선택지가 정답인지 설명한다. "다양한 요인이 있다", "여러 조건에 따라 '
+        '다르다"처럼 근거를 인용하지 않고 뭉뚱그려 서술하지 않는다.'
     ),
     QuestionType.SCENARIO: (
         "options는 option_id가 문자열 1, 2, 3, 4인 정확히 네 개로 구성하고 "

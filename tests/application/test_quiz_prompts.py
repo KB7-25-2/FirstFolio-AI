@@ -151,6 +151,40 @@ def test_build_true_false_prompt_without_target_omits_instruction() -> None:
     assert "correct_answer.option_id는 반드시" not in prompt
 
 
+def test_build_true_false_prompt_with_false_target_requires_specific_rebuttal() -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.TRUE_FALSE,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+        true_false_target="X",
+    )
+
+    assert "구체적 사실(수치, 조건, 정의 등)" in prompt
+    assert "뭉뚱그려 서술하지 않는다" in prompt
+
+
+def test_build_true_false_prompt_with_true_target_omits_rebuttal_rule() -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.TRUE_FALSE,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+        true_false_target="O",
+    )
+
+    assert "뭉뚱그려 서술하지 않는다" not in prompt
+
+
+def test_build_single_choice_prompt_requires_specific_explanation() -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.SINGLE_CHOICE,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+    )
+
+    assert "구체적 사실(수치, 조건, 정의 등)" in prompt
+    assert "뭉뚱그려 서술하지 않는다" in prompt
+
+
 def test_limit_generation_evidence_to_top_five() -> None:
     prompt = build_quiz_generation_prompt(
         question_type=QuestionType.SINGLE_CHOICE,
