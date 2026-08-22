@@ -185,6 +185,17 @@ def test_build_scenario_prompt_requires_single_syllable_persona_name() -> None:
     assert '성씨로 "고"는 사용하지' in prompt
 
 
+def test_build_scenario_prompt_requires_consistent_name_and_grounded_market() -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.SCENARIO,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+    )
+
+    assert "persona.name과 동일한 이름만 사용하고" in prompt
+    assert "근거에 없는 연도·날짜·수치를 임의로 추가하지 않는다" in prompt
+
+
 def test_build_single_choice_prompt_requires_specific_explanation() -> None:
     prompt = build_quiz_generation_prompt(
         question_type=QuestionType.SINGLE_CHOICE,
