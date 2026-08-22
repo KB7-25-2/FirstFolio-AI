@@ -150,7 +150,7 @@ class QuizBatchService:
 
         batch_id = self._id_factory()
         records: list[QuizBatchRecord] = []
-        successful_prompts: list[str] = []
+        successful_prompts_by_topic: dict[str, list[str]] = {}
         successful_items_by_prompt: dict[str, UUID] = {}
         cited_chunk_keys_by_topic: dict[str, list[str]] = {}
 
@@ -171,7 +171,7 @@ class QuizBatchService:
                     batch_id=batch_id,
                     item_id=item_id,
                     item_input=item_input,
-                    successful_prompts=successful_prompts,
+                    successful_prompts=successful_prompts_by_topic.get(topic, []),
                     successful_items_by_prompt=successful_items_by_prompt,
                     excluded_chunk_keys=cited_chunk_keys_by_topic.get(topic, []),
                 )
@@ -181,7 +181,7 @@ class QuizBatchService:
                     if record.result is None:
                         raise RuntimeError("성공 항목에 생성 결과가 없습니다.")
                     prompt = record.result.quiz.prompt
-                    successful_prompts.append(prompt)
+                    successful_prompts_by_topic.setdefault(topic, []).append(prompt)
                     successful_items_by_prompt[normalize_quiz_prompt(prompt)] = item_id
                     cited_chunk_keys_by_topic.setdefault(topic, []).extend(
                         citation.chunk_key for citation in record.result.quiz.citations

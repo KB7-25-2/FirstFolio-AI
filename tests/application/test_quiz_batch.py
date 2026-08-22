@@ -225,6 +225,36 @@ def test_exclude_cited_chunk_keys_within_same_topic_only() -> None:
     assert calls[2].kwargs["excluded_chunk_keys"] == ()
 
 
+def test_scope_existing_prompts_within_same_topic_only() -> None:
+    generation_service = Mock(spec=QuizGenerationService)
+    generation_service.generate.side_effect = [
+        _quiz_result(QuestionType.SINGLE_CHOICE, "예금 질문 1"),
+        _quiz_result(QuestionType.SINGLE_CHOICE, "예금 질문 2"),
+        _quiz_result(QuestionType.SINGLE_CHOICE, "채권 질문 1"),
+    ]
+    service = _batch_service(generation_service)
+
+    service.generate(
+        [
+            QuizBatchRequestItem(
+                question_type="SINGLE_CHOICE",
+                topic="예금",
+                count=2,
+            ),
+            QuizBatchRequestItem(
+                question_type="SINGLE_CHOICE",
+                topic="채권",
+                count=1,
+            ),
+        ]
+    )
+
+    calls = generation_service.generate.call_args_list
+    assert calls[0].kwargs["existing_prompts"] == ()
+    assert calls[1].kwargs["existing_prompts"] == ("예금 질문 1",)
+    assert calls[2].kwargs["existing_prompts"] == ()
+
+
 def test_detect_semantic_duplicate_and_link_original_item() -> None:
     generation_service = Mock(spec=QuizGenerationService)
     first_result = _quiz_result(QuestionType.SINGLE_CHOICE, "예금은 무엇인가?")
