@@ -10,6 +10,7 @@ from app.application.quiz_validation import normalize_quiz_prompt
 from app.domain.chunk import DocumentChunk
 from app.domain.quiz import (
     QuestionType,
+    Quiz,
     QuizBatchDuplicate,
     QuizBatchError,
     QuizBatchItemInput,
@@ -149,15 +150,18 @@ class QuizBatchService:
 
         batch_id = self._id_factory()
         records: list[QuizBatchRecord] = []
-        successful_prompts: list[str] = []
+        successful_prompts_by_topic: dict[str, list[str]] = {}
         successful_items_by_prompt: dict[str, UUID] = {}
+        cited_chunk_keys_by_topic: dict[str, list[str]] = {}
 
         for requested_item in items:
+            topic = requested_item.topic.strip()
+
             for _ in range(requested_item.count):
                 item_id = self._id_factory()
                 item_input = QuizBatchItemInput(
                     question_type=requested_item.question_type.strip(),
-                    topic=requested_item.topic.strip(),
+                    topic=topic,
                     main_chapter_id=requested_item.main_chapter_id,
                     sub_chapter_id=requested_item.sub_chapter_id,
                     usage_type=requested_item.usage_type,
@@ -167,8 +171,9 @@ class QuizBatchService:
                     batch_id=batch_id,
                     item_id=item_id,
                     item_input=item_input,
-                    successful_prompts=successful_prompts,
+                    successful_prompts=successful_prompts_by_topic.get(topic, []),
                     successful_items_by_prompt=successful_items_by_prompt,
+                    excluded_chunk_keys=cited_chunk_keys_by_topic.get(topic, []),
                 )
                 records.append(record)
 
@@ -176,8 +181,11 @@ class QuizBatchService:
                     if record.result is None:
                         raise RuntimeError("성공 항목에 생성 결과가 없습니다.")
                     prompt = record.result.quiz.prompt
-                    successful_prompts.append(prompt)
+                    successful_prompts_by_topic.setdefault(topic, []).append(prompt)
                     successful_items_by_prompt[normalize_quiz_prompt(prompt)] = item_id
+                    cited_chunk_keys_by_topic.setdefault(topic, []).extend(
+                        citation.chunk_key for citation in record.result.quiz.citations
+                    )
 
         return QuizBatchRun(
             records=tuple(records),
@@ -192,6 +200,7 @@ class QuizBatchService:
         item_input: QuizBatchItemInput,
         successful_prompts: Sequence[str],
         successful_items_by_prompt: dict[str, UUID],
+        excluded_chunk_keys: Sequence[str],
     ) -> QuizBatchRecord:
         try:
             question_type = QuestionType(item_input.question_type)
@@ -220,21 +229,26 @@ class QuizBatchService:
                 question_type=question_type,
                 topic=item_input.topic,
                 existing_prompts=tuple(successful_prompts),
+                excluded_chunk_keys=tuple(excluded_chunk_keys),
                 usage_type=item_input.usage_type,
             )
         except QuizGenerationValidationError as error:
-            duplicate_prompt = (
-                error.quiz.prompt
-                if "duplicate_prompt" in error.errors and error.quiz is not None
-                else None
+            is_duplicate_error = bool(
+                {"duplicate_prompt", "semantic_duplicate_prompt"} & set(error.errors)
             )
             original_item_id = (
-                successful_items_by_prompt.get(normalize_quiz_prompt(duplicate_prompt))
-                if duplicate_prompt is not None
+                successful_items_by_prompt.get(
+                    normalize_quiz_prompt(error.duplicate_of_prompt)
+                )
+                if is_duplicate_error and error.duplicate_of_prompt is not None
                 else None
             )
 
-            if duplicate_prompt is not None and original_item_id is not None:
+            if (
+                is_duplicate_error
+                and error.quiz is not None
+                and original_item_id is not None
+            ):
                 return QuizBatchRecord(
                     batch_id=batch_id,
                     item_id=item_id,
@@ -245,13 +259,15 @@ class QuizBatchService:
                         stage=error.stage,
                         errors=list(error.errors),
                         reason=(
-                            "정규화한 질문이 같은 배치의 선행 성공 항목과 동일합니다."
+                            "같은 배치의 선행 성공 항목과 의미가 같습니다."
+                            if "semantic_duplicate_prompt" in error.errors
+                            else "정규화한 질문이 같은 배치의 선행 성공 항목과 동일합니다."
                         ),
                         unsupported_claims=list(error.unsupported_claims),
                     ),
                     duplicate=QuizBatchDuplicate(
                         original_item_id=original_item_id,
-                        prompt=duplicate_prompt,
+                        prompt=error.quiz.prompt,
                     ),
                 )
 
@@ -263,6 +279,7 @@ class QuizBatchService:
                 errors=list(error.errors),
                 reason=error.reason or str(error),
                 unsupported_claims=list(error.unsupported_claims),
+                attempted_quiz=error.quiz,
             )
         except Exception:
             return _failure_record(
@@ -294,6 +311,7 @@ def _failure_record(
     errors: list[str],
     reason: str,
     unsupported_claims: list[str] | None = None,
+    attempted_quiz: Quiz | None = None,
 ) -> QuizBatchRecord:
     return QuizBatchRecord(
         batch_id=batch_id,
@@ -306,6 +324,7 @@ def _failure_record(
             errors=errors,
             reason=reason,
             unsupported_claims=unsupported_claims or [],
+            attempted_quiz=attempted_quiz,
         ),
         duplicate=None,
     )

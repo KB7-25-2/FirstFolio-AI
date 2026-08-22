@@ -47,7 +47,6 @@ def _valid_payload(
             },
             "market": {
                 "title": "시장 정보",
-                "reference_at": "2026-08-10T00:00:00Z",
                 "bullets": ["검증된 시장 정보"],
             },
             "constraints": [

@@ -147,6 +147,7 @@ def test_create_service_with_mysql_and_search_components(
     embedding_client = Mock()
     create_embedding = Mock(return_value=embedding_client)
     faiss_search = Mock()
+    faiss_search.vector_count = 1
     faiss_class = Mock()
     faiss_class.load.return_value = faiss_search
     hybrid_search = Mock()
@@ -197,7 +198,49 @@ def test_create_service_with_mysql_and_search_components(
         hybrid_search=hybrid_search,
         chunk_repository=repository,
         model_client=model_client,
+        embedding_client=embedding_client,
     )
+
+
+def test_warn_to_stderr_when_faiss_index_does_not_match_corpus(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    settings = Settings(
+        faiss_index_path="/tmp/test.faiss",
+        faiss_mapping_path="/tmp/test-mapping.json",
+        _env_file=None,
+    )
+    chunk = DocumentChunk(
+        document_id="47",
+        chunk_key="47:0",
+        sequence=0,
+        content="예금은 금융상품이다.",
+        title="금융 교과서",
+        source="financial_textbook.txt",
+    )
+    repository = Mock()
+    repository.find_all.return_value = [chunk]
+    faiss_search = Mock()
+    faiss_search.vector_count = 999
+    faiss_class = Mock()
+    faiss_class.load.return_value = faiss_search
+
+    monkeypatch.setattr(quiz_mvp, "MySQLChunkRepository", Mock(return_value=repository))
+    monkeypatch.setattr(quiz_mvp, "KiwiTokenizer", Mock())
+    monkeypatch.setattr(quiz_mvp, "BM25Search", Mock())
+    monkeypatch.setattr(quiz_mvp, "OpenAIEmbeddingClient", Mock())
+    monkeypatch.setattr(quiz_mvp, "FaissVectorSearch", faiss_class)
+    monkeypatch.setattr(quiz_mvp, "HybridSearch", Mock())
+    monkeypatch.setattr(quiz_mvp, "OpenAIQuizModelClient", Mock())
+    monkeypatch.setattr(quiz_mvp, "QuizGenerationService", Mock())
+
+    quiz_mvp.create_quiz_generation_service(settings)
+
+    warning = json.loads(capsys.readouterr().err)
+    assert warning["warning"] == "faiss_index_corpus_mismatch"
+    assert warning["corpus_chunk_count"] == 1
+    assert warning["faiss_vector_count"] == 999
 
 
 def test_print_success_result_as_json(

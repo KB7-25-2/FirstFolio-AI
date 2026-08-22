@@ -64,7 +64,6 @@ class ScenarioMarket(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1)
-    reference_at: datetime
     bullets: list[str] = Field(min_length=1)
 
 
@@ -177,6 +176,7 @@ class QuizBatchError(BaseModel):
     errors: list[str] = Field(min_length=1)
     reason: str = Field(min_length=1)
     unsupported_claims: list[str]
+    attempted_quiz: Quiz | None = None
 
 
 class QuizBatchDuplicate(BaseModel):

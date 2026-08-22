@@ -21,7 +21,7 @@ class FaissVectorSearch:
             raise ValueError("FAISS 색인을 생성할 문서 청크가 없습니다.")
 
         embeddings = embedding_client.embed_documents(
-            [chunk.content for chunk in chunks]
+            [chunk.searchable_text() for chunk in chunks]
         )
 
         if len(embeddings) != len(chunks):
@@ -33,6 +33,10 @@ class FaissVectorSearch:
         self._chunk_keys = [chunk.chunk_key for chunk in chunks]
         self._index = faiss.IndexFlatIP(vectors.shape[1])
         self._index.add(vectors)
+
+    @property
+    def vector_count(self) -> int:
+        return len(self._chunk_keys)
 
     def save(
         self,

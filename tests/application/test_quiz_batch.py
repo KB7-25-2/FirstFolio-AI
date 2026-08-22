@@ -38,6 +38,7 @@ from app.domain.quiz import (
 def _quiz_result(
     question_type: QuestionType,
     prompt: str,
+    chunk_key: str = "47:0",
 ) -> QuizGenerationResult:
     if question_type == QuestionType.TRUE_FALSE:
         options = [
@@ -70,7 +71,6 @@ def _quiz_result(
             },
             "market": {
                 "title": "시장 정보",
-                "reference_at": "2026-08-10T00:00:00Z",
                 "bullets": ["검증된 시장 정보"],
             },
             "constraints": ["원금 손실을 피해야 한다."],
@@ -90,7 +90,7 @@ def _quiz_result(
                 "difficulty": "EASY",
                 "citations": [
                     {
-                        "chunk_key": "47:0",
+                        "chunk_key": chunk_key,
                         "evidence_text": (
                             "예금은 금융기관에 돈을 맡기는 금융상품이다."
                         ),
@@ -100,8 +100,8 @@ def _quiz_result(
         ),
         sources=[
             QuizSource(
-                document_id=47,
-                chunk_key="47:0",
+                document_id=int(chunk_key.split(":")[0]),
+                chunk_key=chunk_key,
                 title="금융 교과서",
                 heading=None,
                 source_url=None,
@@ -195,6 +195,102 @@ def test_generate_mixed_batch_and_expand_count() -> None:
     )
 
 
+def test_exclude_cited_chunk_keys_within_same_topic_only() -> None:
+    generation_service = Mock(spec=QuizGenerationService)
+    generation_service.generate.side_effect = [
+        _quiz_result(QuestionType.SINGLE_CHOICE, "예금 질문 1", chunk_key="47:0"),
+        _quiz_result(QuestionType.SINGLE_CHOICE, "예금 질문 2", chunk_key="47:1"),
+        _quiz_result(QuestionType.SINGLE_CHOICE, "채권 질문 1", chunk_key="48:0"),
+    ]
+    service = _batch_service(generation_service)
+
+    service.generate(
+        [
+            QuizBatchRequestItem(
+                question_type="SINGLE_CHOICE",
+                topic="예금",
+                count=2,
+            ),
+            QuizBatchRequestItem(
+                question_type="SINGLE_CHOICE",
+                topic="채권",
+                count=1,
+            ),
+        ]
+    )
+
+    calls = generation_service.generate.call_args_list
+    assert calls[0].kwargs["excluded_chunk_keys"] == ()
+    assert calls[1].kwargs["excluded_chunk_keys"] == ("47:0",)
+    assert calls[2].kwargs["excluded_chunk_keys"] == ()
+
+
+def test_scope_existing_prompts_within_same_topic_only() -> None:
+    generation_service = Mock(spec=QuizGenerationService)
+    generation_service.generate.side_effect = [
+        _quiz_result(QuestionType.SINGLE_CHOICE, "예금 질문 1"),
+        _quiz_result(QuestionType.SINGLE_CHOICE, "예금 질문 2"),
+        _quiz_result(QuestionType.SINGLE_CHOICE, "채권 질문 1"),
+    ]
+    service = _batch_service(generation_service)
+
+    service.generate(
+        [
+            QuizBatchRequestItem(
+                question_type="SINGLE_CHOICE",
+                topic="예금",
+                count=2,
+            ),
+            QuizBatchRequestItem(
+                question_type="SINGLE_CHOICE",
+                topic="채권",
+                count=1,
+            ),
+        ]
+    )
+
+    calls = generation_service.generate.call_args_list
+    assert calls[0].kwargs["existing_prompts"] == ()
+    assert calls[1].kwargs["existing_prompts"] == ("예금 질문 1",)
+    assert calls[2].kwargs["existing_prompts"] == ()
+
+
+def test_detect_semantic_duplicate_and_link_original_item() -> None:
+    generation_service = Mock(spec=QuizGenerationService)
+    first_result = _quiz_result(QuestionType.SINGLE_CHOICE, "예금은 무엇인가?")
+    generation_service.generate.side_effect = [
+        first_result,
+        QuizGenerationValidationError(
+            ["semantic_duplicate_prompt"],
+            stage="generation_validation",
+            quiz=_quiz_result(
+                QuestionType.SINGLE_CHOICE,
+                "예금이란 무엇을 의미하는가?",
+            ).quiz,
+            duplicate_of_prompt="예금은 무엇인가?",
+        ),
+    ]
+    service = _batch_service(generation_service)
+
+    run = service.generate(
+        [
+            QuizBatchRequestItem(
+                question_type="SINGLE_CHOICE",
+                topic="예금",
+                count=2,
+            )
+        ]
+    )
+
+    first, duplicate = run.records
+    assert first.status == QuizBatchStatus.SUCCEEDED
+    assert duplicate.status == QuizBatchStatus.DUPLICATE
+    assert duplicate.error.errors == ["semantic_duplicate_prompt"]
+    assert duplicate.duplicate.original_item_id == first.item_id
+    assert duplicate.duplicate.prompt == "예금이란 무엇을 의미하는가?"
+    assert run.summary.duplicates == 1
+
+
 def test_continue_after_validation_and_unexpected_failures() -> None:
     generation_service = Mock(spec=QuizGenerationService)
     generation_service.generate.side_effect = [
@@ -223,9 +319,31 @@ def test_continue_after_validation_and_unexpected_failures() -> None:
     assert run.records[0].error.errors == ["search_result_required"]
     assert run.records[1].error.errors == ["quiz_generation_failed"]
     assert "외부 서비스 상세 오류" not in run.records[1].error.reason
+    assert run.records[0].error.attempted_quiz is None
+    assert run.records[1].error.attempted_quiz is None
     assert run.summary.failed == 2
     assert run.summary.succeeded == 1
     assert generation_service.generate.call_count == 3
+
+
+def test_capture_attempted_quiz_on_generation_validation_failure() -> None:
+    generation_service = Mock(spec=QuizGenerationService)
+    attempted_quiz = _quiz_result(QuestionType.SINGLE_CHOICE, "인용에 실패한 문항").quiz
+    generation_service.generate.side_effect = QuizGenerationValidationError(
+        ["citation_evidence_not_found:97:268"],
+        stage="generation_validation",
+        quiz=attempted_quiz,
+    )
+    service = _batch_service(generation_service)
+
+    run = service.generate(
+        [QuizBatchRequestItem(question_type="SINGLE_CHOICE", topic="주제")]
+    )
+
+    (record,) = run.records
+    assert record.status == QuizBatchStatus.FAILED
+    assert record.error.attempted_quiz == attempted_quiz
+    assert record.error.attempted_quiz.prompt == "인용에 실패한 문항"
 
 
 def test_record_invalid_type_and_blank_topic_without_service_call() -> None:
@@ -274,9 +392,10 @@ def test_detect_duplicate_prompt_and_link_original_item(
         question_type: QuestionType,
         topic: str,
         existing_prompts: Sequence[str],
+        excluded_chunk_keys: Sequence[str] = (),
         usage_type: UsageType | None = None,
     ) -> QuizGenerationResult:
-        del topic, usage_type
+        del topic, usage_type, excluded_chunk_keys
         result = (
             first_result
             if not existing_prompts
@@ -291,6 +410,7 @@ def test_detect_duplicate_prompt_and_link_original_item(
                 ["duplicate_prompt"],
                 stage="generation_validation",
                 quiz=result.quiz,
+                duplicate_of_prompt=result.quiz.prompt,
             )
 
         return result

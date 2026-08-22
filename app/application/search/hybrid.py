@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from app.application.ports.chunk_repository import ChunkRepository
 from app.core.config import Settings
 from app.domain.search import SearchResult
@@ -21,11 +23,16 @@ class HybridSearch:
     def search(
         self,
         query: str,
+        *,
+        exclude_chunk_keys: Sequence[str] = (),
     ) -> list[SearchResult]:
+        candidate_top_k = self._settings.search_candidate_top_k
+        rrf_k = self._settings.search_rrf_k
+
         bm25_results = (
             self._bm25_search.search(
                 query=query,
-                top_k=self._settings.search_top_k,
+                top_k=candidate_top_k,
             )
             if self._settings.bm25_weight > 0
             else []
@@ -33,7 +40,7 @@ class HybridSearch:
         faiss_results = (
             self._faiss_search.search(
                 query=query,
-                top_k=self._settings.search_top_k,
+                top_k=candidate_top_k,
             )
             if self._settings.faiss_weight > 0
             else []
@@ -49,7 +56,7 @@ class HybridSearch:
             start=1,
         ):
             chunk_key = result.chunk.chunk_key
-            rank_score = self._settings.bm25_weight / rank
+            rank_score = self._settings.bm25_weight / (rrf_k + rank)
 
             scores_by_chunk_key[chunk_key] = (
                 scores_by_chunk_key.get(chunk_key, 0.0) + rank_score
@@ -69,18 +76,20 @@ class HybridSearch:
                 start=1,
             ):
                 chunks_by_chunk_key[result.chunk_key] = chunk
-                rank_score = self._settings.faiss_weight / rank
+                rank_score = self._settings.faiss_weight / (rrf_k + rank)
 
                 scores_by_chunk_key[result.chunk_key] = (
                     scores_by_chunk_key.get(result.chunk_key, 0.0) + rank_score
                 )
 
+        excluded_chunk_keys = set(exclude_chunk_keys)
         combined_results = [
             SearchResult(
                 chunk=chunks_by_chunk_key[chunk_key],
                 score=score,
             )
             for chunk_key, score in scores_by_chunk_key.items()
+            if chunk_key not in excluded_chunk_keys
         ]
         combined_results.sort(
             key=lambda result: (

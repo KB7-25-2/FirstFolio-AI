@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.application.ports.embedding import EmbeddingClient
 from app.application.ports.quiz_model import (
     GroundingModelResult,
     QuizModelClient,
@@ -75,7 +76,6 @@ def _quiz(
             },
             "market": {
                 "title": "시장 정보",
-                "reference_at": "2026-08-10T00:00:00Z",
                 "bullets": ["검증된 시장 정보"],
             },
             "constraints": ["원금 손실을 피해야 한다."],
@@ -117,6 +117,7 @@ def _service(
     chunks = chunks or _chunks()
     repository = InMemoryChunkRepository()
     repository.save_all(chunks)
+    embedding_client = Mock(spec=EmbeddingClient)
     hybrid_search = Mock(spec=HybridSearch)
     hybrid_search.search.return_value = (
         search_results
@@ -148,6 +149,7 @@ def _service(
         hybrid_search=hybrid_search,
         chunk_repository=repository,
         model_client=model_client,
+        embedding_client=embedding_client,
         rng=rng,
     )
     return service, model_client, repository
@@ -358,6 +360,50 @@ def test_stop_before_generation_without_search_result() -> None:
     model_client.validate_grounding.assert_not_called()
 
 
+def test_pass_excluded_chunk_keys_to_hybrid_search() -> None:
+    chunks = _chunks()
+    repository = InMemoryChunkRepository()
+    repository.save_all(chunks)
+    embedding_client = Mock(spec=EmbeddingClient)
+    hybrid_search = Mock(spec=HybridSearch)
+    hybrid_search.search.return_value = [
+        SearchResult(chunk=chunk, score=1.0) for chunk in chunks
+    ]
+    model_client = Mock(spec=QuizModelClient)
+    model_client.generate_quiz.return_value = QuizModelResult(
+        quiz=_quiz(),
+        input_tokens=120,
+        output_tokens=80,
+    )
+    model_client.validate_grounding.return_value = GroundingModelResult(
+        validation=GroundingValidation(
+            supported=True,
+            reason="검색 근거로 뒷받침됩니다.",
+            unsupported_claims=[],
+        ),
+        input_tokens=40,
+        output_tokens=20,
+    )
+    service = QuizGenerationService(
+        settings=Settings(generation_model="gpt-4o-mini", _env_file=None),
+        hybrid_search=hybrid_search,
+        chunk_repository=repository,
+        model_client=model_client,
+        embedding_client=embedding_client,
+    )
+
+    service.generate(
+        question_type=QuestionType.SINGLE_CHOICE,
+        topic="예금",
+        excluded_chunk_keys=["47:0", "47:1"],
+    )
+
+    hybrid_search.search.assert_called_once_with(
+        "예금",
+        exclude_chunk_keys=["47:0", "47:1"],
+    )
+
+
 def test_reject_generated_question_type_different_from_request() -> None:
     service, model_client, _ = _service(quiz=_quiz(QuestionType.SCENARIO))
 
@@ -451,6 +497,68 @@ def test_reject_code_validation_failure_before_grounding(
     assert error.value.reason is None
     assert error.value.unsupported_claims == ()
     model_client.validate_grounding.assert_not_called()
+
+
+def test_reject_semantic_duplicate_prompt() -> None:
+    quiz = _quiz(prompt="정기 예금의 특징으로 옳은 것은?")
+    service, model_client, _ = _service(quiz=quiz)
+    service._embedding_client.embed_query.return_value = [1.0, 0.0]
+    service._embedding_client.embed_documents.return_value = [[1.0, 0.0]]
+
+    with pytest.raises(QuizGenerationValidationError) as error:
+        service.generate(
+            question_type=QuestionType.SINGLE_CHOICE,
+            topic="예금",
+            existing_prompts=["예금의 특징으로 맞는 것은 무엇인가?"],
+        )
+
+    assert error.value.errors == ("semantic_duplicate_prompt",)
+    assert error.value.stage == "generation_validation"
+    assert error.value.duplicate_of_prompt == "예금의 특징으로 맞는 것은 무엇인가?"
+    model_client.validate_grounding.assert_not_called()
+
+
+def test_accept_when_semantic_similarity_below_threshold() -> None:
+    quiz = _quiz(prompt="정기 예금의 특징으로 옳은 것은?")
+    service, model_client, _ = _service(quiz=quiz)
+    service._embedding_client.embed_query.return_value = [1.0, 0.0]
+    service._embedding_client.embed_documents.return_value = [[0.0, 1.0]]
+
+    result = service.generate(
+        question_type=QuestionType.SINGLE_CHOICE,
+        topic="예금",
+        existing_prompts=["채권의 만기와 이자 지급 방식은 어떻게 되는가?"],
+    )
+
+    assert result.quiz.prompt == "정기 예금의 특징으로 옳은 것은?"
+    model_client.validate_grounding.assert_called_once()
+
+
+def test_skip_semantic_check_when_no_existing_prompts() -> None:
+    service, _, _ = _service()
+
+    service.generate(
+        question_type=QuestionType.SINGLE_CHOICE,
+        topic="예금",
+    )
+
+    service._embedding_client.embed_query.assert_not_called()
+    service._embedding_client.embed_documents.assert_not_called()
+
+
+def test_include_existing_prompts_in_generation_prompt() -> None:
+    service, model_client, _ = _service()
+    service._embedding_client.embed_query.return_value = [1.0, 0.0]
+    service._embedding_client.embed_documents.return_value = [[0.0, 1.0]]
+
+    service.generate(
+        question_type=QuestionType.SINGLE_CHOICE,
+        topic="예금",
+        existing_prompts=["예금의 특징으로 맞는 것은 무엇인가?"],
+    )
+
+    generation_prompt = model_client.generate_quiz.call_args.args[0]
+    assert "예금의 특징으로 맞는 것은 무엇인가?" in generation_prompt
 
 
 def test_reject_unsupported_grounding_result() -> None:
@@ -639,7 +747,6 @@ def test_scenario_skips_numeric_check_and_proceeds_to_llm_grounding() -> None:
             },
             "market": {
                 "title": "시장 정보",
-                "reference_at": "2026-08-10T00:00:00Z",
                 "bullets": ["검증된 시장 정보"],
             },
             "constraints": ["예치 기간이 1개월 이상 5년 이내"],

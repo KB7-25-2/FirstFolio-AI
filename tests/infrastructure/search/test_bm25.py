@@ -121,6 +121,50 @@ def test_reject_empty_chunk_collection(
         )
 
 
+def test_include_heading_in_search_index(
+    tokenizer: KiwiTokenizer,
+) -> None:
+    deposit_chunk = DocumentChunk(
+        document_id="deposit",
+        chunk_key="deposit:0",
+        sequence=0,
+        content="이 상품은 안전하게 운용할 수 있다.",
+        title="예금",
+        source="deposit.txt",
+        heading="예금의 정의",
+    )
+    bond_chunk = DocumentChunk(
+        document_id="bond",
+        chunk_key="bond:0",
+        sequence=0,
+        content="이 상품은 발행자에게 돈을 빌려주고 이자를 받는 방식이다.",
+        title="채권",
+        source="bond.txt",
+        heading="채권의 정의",
+    )
+    fund_chunk = DocumentChunk(
+        document_id="fund",
+        chunk_key="fund:0",
+        sequence=0,
+        content="이 상품은 여러 투자자의 자금을 모아 분산 운용하는 방식이다.",
+        title="펀드",
+        source="fund.txt",
+        heading="펀드의 정의",
+    )
+    search = BM25Search(
+        chunks=[deposit_chunk, bond_chunk, fund_chunk],
+        tokenizer=tokenizer,
+    )
+
+    results = search.search(
+        query="예금이란",
+        top_k=1,
+    )
+
+    assert results
+    assert results[0].chunk.chunk_key == "deposit:0"
+
+
 def test_reject_chunk_collection_without_search_tokens(
     tokenizer: KiwiTokenizer,
 ) -> None:
