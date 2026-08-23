@@ -71,9 +71,9 @@ class QuizScenario(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1)
-    narrative: str = Field(min_length=1)
     persona: ScenarioPersona
     requirements: ScenarioRequirements
+    narrative: str = Field(min_length=1)
     market: ScenarioMarket
     constraints: list[str]
     paper_title: str = Field(min_length=1)
