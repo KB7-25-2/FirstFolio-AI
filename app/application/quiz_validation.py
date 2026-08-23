@@ -3,6 +3,7 @@ import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 from app.domain.chunk import DocumentChunk
 from app.domain.quiz import QuestionType, Quiz, QuizAnswer, QuizOption, UsageType
@@ -143,6 +144,21 @@ def align_quiz_citation_evidence(
         )
 
     return quiz.model_copy(update={"citations": aligned_citations})
+
+
+def stamp_scenario_market_reference_at(quiz: Quiz, now: datetime) -> Quiz:
+    """SCENARIO의 market.reference_at을 실제 생성 시각으로 덮어쓴다.
+
+    market.bullets는 정적인 검색 근거에서 뽑은 내용이라 진짜 시장 데이터
+    기준 시점이 존재하지 않는다. LLM이 이 값을 임의로 지어내지 않도록,
+    모델 출력과 무관하게 항상 실제 생성 시각으로 고정한다.
+    """
+    if quiz.scenario_json is None:
+        return quiz
+
+    updated_market = quiz.scenario_json.market.model_copy(update={"reference_at": now})
+    updated_scenario = quiz.scenario_json.model_copy(update={"market": updated_market})
+    return quiz.model_copy(update={"scenario_json": updated_scenario})
 
 
 def _find_evidence_ignoring_whitespace(

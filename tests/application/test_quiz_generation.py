@@ -76,6 +76,7 @@ def _quiz(
             },
             "market": {
                 "title": "시장 정보",
+                "reference_at": "2026-08-10T00:00:00Z",
                 "bullets": ["검증된 시장 정보"],
             },
             "constraints": ["원금 손실을 피해야 한다."],
@@ -317,6 +318,19 @@ def test_generate_valid_quiz_result(
     generation_prompt = model_client.generate_quiz.call_args.args[0]
     assert 'chunk_key="47:4"' in generation_prompt
     assert 'chunk_key="47:5"' not in generation_prompt
+
+
+def test_generate_scenario_overrides_market_reference_at() -> None:
+    quiz = _quiz(QuestionType.SCENARIO)
+    model_reference_at = quiz.scenario_json.market.reference_at
+    service, _, _ = _service(quiz=quiz)
+
+    result = service.generate(
+        question_type=QuestionType.SCENARIO,
+        topic="예금",
+    )
+
+    assert result.quiz.scenario_json.market.reference_at != model_reference_at
 
 
 @pytest.mark.parametrize(
@@ -747,6 +761,7 @@ def test_scenario_skips_numeric_check_and_proceeds_to_llm_grounding() -> None:
             },
             "market": {
                 "title": "시장 정보",
+                "reference_at": "2026-08-10T00:00:00Z",
                 "bullets": ["검증된 시장 정보"],
             },
             "constraints": ["예치 기간이 1개월 이상 5년 이내"],
