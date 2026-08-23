@@ -51,14 +51,15 @@ _TYPE_RULES = {
     ),
     QuestionType.SCENARIO: (
         "options는 option_id가 문자열 1, 2, 3, 4인 정확히 네 개로 구성하고 "
-        "scenario_json에 title, narrative, persona(name, age, job), "
-        "requirements(assets, risk, goal), market(title, bullets), "
-        "constraints, paper_title을 모두 작성한다. persona는 가상 인물의 이름·나이·"
-        "직업이고, persona.name은 성씨 한 글자와 이름 '자' 한 글자로 이루어진 "
-        '외자 이름으로 작성한다(예: "김자", "이자", "박자"). 성씨로 "고"는 사용하지 '
-        "않는다. narrative와 explanation에서 이 인물을 지칭할 때는 persona.name과 "
-        "동일한 이름만 사용하고 다른 이름을 새로 만들어 쓰지 않는다. "
-        "requirements는 그 인물의 보유 자산·위험 허용도·목표이며, market은 "
+        "scenario_json에 title, persona(name, age, job), "
+        "requirements(assets, risk, goal), narrative, market(title, bullets), "
+        "constraints, paper_title을 이 순서대로 모두 작성한다. persona는 가상 "
+        "인물의 이름·나이·직업이고, persona.name은 성씨 한 글자와 이름 '자' 한 "
+        '글자로 이루어진 외자 이름으로 먼저 정한다(예: "김자", "이자", "박자"). '
+        '성씨로 "고"는 사용하지 않는다. requirements는 그 인물의 보유 자산·위험 '
+        "허용도·목표이다. narrative는 persona와 requirements를 이미 정한 뒤에 "
+        "작성하며, 인물을 지칭할 때는 앞서 정한 persona.name과 동일한 이름만 "
+        "사용하고 다른 이름을 새로 만들어 쓰지 않는다. market은 "
         "판단에 참고할 시장 정보의 제목·핵심 항목이다. market.title과 "
         "market.bullets에는 검색 근거에 실제로 있는 내용만 사용하고, 근거에 없는 "
         "연도·날짜·수치를 임의로 추가하지 않는다. constraints에는 "
