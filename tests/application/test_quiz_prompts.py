@@ -197,6 +197,27 @@ def test_build_scenario_prompt_requires_consistent_name_and_grounded_market() ->
     assert "근거에 없는 연도·날짜·수치를 임의로 추가하지 않는다" in prompt
 
 
+def test_build_scenario_prompt_requires_market_bullets_to_support_answer() -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.SCENARIO,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+    )
+
+    assert "선택지로 제시할 상품 유형들을 서로 구분할 수 있는 실제 기준" in prompt
+    assert "그 기준이 검색 근거에 없으면 그 기준으로 선택지를 구성하지 않는다" in prompt
+
+
+def test_build_scenario_prompt_forbids_hint_in_option_text() -> None:
+    prompt = build_quiz_generation_prompt(
+        question_type=QuestionType.SCENARIO,
+        topic="예금과 적금",
+        retrieved_chunks=_chunks(),
+    )
+
+    assert "괄호로 판단 근거나 힌트를 덧붙이지 않는다" in prompt
+
+
 def test_build_single_choice_prompt_requires_specific_explanation() -> None:
     prompt = build_quiz_generation_prompt(
         question_type=QuestionType.SINGLE_CHOICE,
