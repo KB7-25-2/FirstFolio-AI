@@ -128,6 +128,10 @@ def build_quiz_generation_prompt(
   하나와 글자 하나 다르지 않게 동일해야 한다. citation_candidate 목록에
   없는 문장을 새로 만들어 evidence_text에 넣지 않는다.
 - evidence_text를 복사할 때 띄어쓰기와 오탈자를 고치지 말고 원문 표기를 유지한다.
+- prompt, narrative, explanation 같은 자유 서술 필드는 자연스러운 한국어
+  문장으로만 작성한다. <evidence>, <citation_candidate> 같은 검색 근거의
+  태그나 ['...'] 같은 리스트·괄호 표기를 그대로 옮겨 쓰지 않는다. 근거를
+  인용할 때도 태그나 대괄호 없이 문장 형태로만 녹여 쓴다.
 - 뒷받침하려는 사실과 맞는 citation_candidate가 어느 chunk_key에도 없으면
   다른 chunk_key의 candidate로 대체하고, 그래도 없으면 그 사실은 질문·
   정답·해설에서 아예 사용하지 않는다.
