@@ -54,9 +54,9 @@ _TYPE_RULES = {
         "scenario_json에 title, persona(name, age, job), "
         "requirements(assets, risk, goal), narrative, market(title, bullets), "
         "constraints, paper_title을 이 순서대로 모두 작성한다. persona는 가상 "
-        "인물의 이름·나이·직업이고, persona.name은 성씨 한 글자와 이름 '자' 한 "
-        '글자로 이루어진 외자 이름으로 먼저 정한다(예: "김자", "이자", "박자"). '
-        '성씨로 "고"는 사용하지 않는다. requirements는 그 인물의 보유 자산·위험 '
+        "인물의 이름·나이·직업이고, persona.name은 민서·지훈처럼 자연스러운 "
+        "한국어 이름으로 정한다. 장난스럽거나 부자연스러운 이름은 사용하지 않는다. "
+        "requirements는 그 인물의 보유 자산·위험 "
         "허용도·목표이다. narrative는 persona와 requirements를 이미 정한 뒤에 "
         "작성하며, 인물을 지칭할 때는 앞서 정한 persona.name과 동일한 이름만 "
         "사용하고 다른 이름을 새로 만들어 쓰지 않는다. market은 "
@@ -74,6 +74,9 @@ _TYPE_RULES = {
         "혼합형 펀드, 단기·장기 채권 등)이 적합한지 고르는 문제로 작성한다. "
         "선택지는 상품 유형의 특성(위험도, 기간, 유동성)으로 구분하고 "
         "scenario_json의 제약 조건만으로 정답이 하나로 결정될 수 있어야 한다. "
+        "서로 포함 관계인 상품명이나 같은 조건에서 둘 다 정답이 되는 유사 상품을 "
+        "동시에 선택지로 넣지 않는다. 목표 금액과 기간은 저위험 상품의 확정되지 않은 "
+        "수익만으로 비현실적인 증가를 요구하지 않도록 설정한다. "
         "options의 text는 상품 유형명만 간결하게 작성하고, 괄호로 판단 근거나 "
         "힌트를 덧붙이지 않는다."
     ),
@@ -125,8 +128,9 @@ def build_quiz_generation_prompt(
 - SCENARIO 이외의 유형에서 prompt, 정답 선택지와 explanation의 금액, 금리,
   비율, 날짜와 기간은 검색 근거에 실제로 있는 값만 사용한다.
 - SCENARIO에서 scenario_json과 options의 수치(기간, 금리, 금액)는 시나리오
-  설정값으로 검색 근거와 무관하게 작성할 수 있다. 단, 선택지 간 우열이
-  scenario_json의 제약 조건만으로 명확하게 결정되어야 한다.
+  설정값으로 작성할 수 있다. 단, 인물의 보유 자산·필요 금액·사용 기간 같은
+  가상 조건만 새로 만들 수 있다. 상품의 수익률·유동성·위험·만기 같은 금융 사실은
+  검색 근거에 있어야 하며, 목표 금액과 기간은 서로 현실적으로 일관되어야 한다.
 - 오답 선택지는 명백히 틀리거나 주어진 조건에 맞지 않게 작성하고,
   사실이지만 질문과 관련이 약한 문장으로 정답을 모호하게 만들지 않는다.
 - citations에는 아래 검색 근거에 실제로 존재하는 chunk_key만 사용한다.
@@ -138,6 +142,10 @@ def build_quiz_generation_prompt(
   문장으로만 작성한다. <evidence>, <citation_candidate> 같은 검색 근거의
   태그나 ['...'] 같은 리스트·괄호 표기를 그대로 옮겨 쓰지 않는다. 근거를
   인용할 때도 태그나 대괄호 없이 문장 형태로만 녹여 쓴다.
+- 검색 근거에 실제로 등장하는 금융 약어·영문 용어가 아니라면 자유 서술 필드에
+  영어 단어를 섞지 않는다.
+- citations의 evidence_text는 단순히 관련 분야의 문장이 아니라 prompt의 핵심 주장,
+  정답 선택지 또는 explanation을 직접 뒷받침하는 문장으로 고른다.
 - 뒷받침하려는 사실과 맞는 citation_candidate가 어느 chunk_key에도 없으면
   다른 chunk_key의 candidate로 대체하고, 그래도 없으면 그 사실은 질문·
   정답·해설에서 아예 사용하지 않는다.
@@ -176,9 +184,11 @@ def _grounding_type_rule(quiz: Quiz) -> str:
             "scenario_json의 제약 조건(기간, 유동성, 위험 허용 범위 등)만으로 "
             "정답 하나를 논리적으로 결정할 수 있는지 확인한다. "
             "결정할 수 없으면 supported를 false로 반환한다. "
-            "explanation은 시나리오 제약 조건을 근거로 정답을 설명하는 글이므로 "
-            "검색 근거와 직접 대응하지 않아도 된다. explanation이 검색 근거와 "
-            "명백히 모순되지 않으면 supported를 true로 반환한다."
+            "인물의 이름·보유 자산·목표 금액·사용 기간은 가상 설정으로 허용하지만, "
+            "상품의 수익률·유동성·위험·만기와 정답의 우월성을 설명하는 금융 사실은 "
+            "검색 근거로 직접 확인되어야 한다. 목표가 기간과 위험 수준에 비해 "
+            "비현실적이거나, 두 선택지가 모두 조건을 만족하거나, 설명의 핵심 금융 "
+            "사실이 근거에 없으면 supported를 false로 반환한다."
         )
 
     if quiz.question_type != QuestionType.TRUE_FALSE:
@@ -232,9 +242,14 @@ def build_grounding_validation_prompt(
 
 검증 순서:
 1. {type_rule}
-2. distractor_options는 근거의 지원 여부가 아니라 질문과 시나리오에서
+2. citations의 evidence_text가 prompt, correct_answer_option 또는 explanation의
+   핵심 주장을 직접 뒷받침하는지 확인한다. 검색 근거 전체에 관련 내용이 있어도
+   선택한 evidence_text가 핵심 주장과 무관하면 supported를 false로 반환한다.
+3. distractor_options는 근거의 지원 여부가 아니라 질문과 시나리오에서
    또 다른 정답이 될 수 있는지만 확인한다.
-3. 위 결과를 종합해 supported를 결정한다.
+4. 자연스럽지 않은 영어 혼용, 내부적으로 모순되는 목표와 조건, 사실상 같은
+   선택지가 있으면 supported를 false로 반환한다.
+5. 위 결과를 종합해 supported를 결정한다.
 
 검증 규칙:
 - correct_answer가 가리키는 정답 선택지는 correct_answer_option으로
@@ -250,11 +265,13 @@ def build_grounding_validation_prompt(
   단일 정답 조건 위반으로 supported를 false로 반환한다.
 - TRUE_FALSE에서 correct_answer_option이 X이고 explanation이 근거를 들어
   prompt가 왜 거짓인지 올바르게 설명하면 prompt를 unsupported_claims에
-  포함하지 않는다.
+  포함하지 않고 supported를 반드시 true로 반환한다. 이 경우 거짓 prompt는
+  검증해야 할 사실 주장이 아니라 학생이 판단할 대상이다.
 - SCENARIO에서 scenario_json과 선택지의 수치(기간, 금리, 금액)는 시나리오
   설정값이므로 검색 근거 확인 없이 허용한다.
-- SCENARIO에서 explanation은 시나리오 제약 조건을 근거로 정답을 설명하는 글이므로
-  검색 근거와 직접 대응하지 않아도 된다. 검색 근거와 명백히 모순되지 않으면 허용한다.
+- SCENARIO에서 인물의 이름·보유 자산·목표 금액·사용 기간은 가상 설정으로 허용한다.
+  반면 상품의 수익률·유동성·위험·만기와 정답의 우월성을 설명하는 금융 사실은
+  citations의 evidence_text 또는 검색 근거로 직접 확인되어야 한다.
 - SCENARIO에서 정답이 scenario_json의 제약 조건(기간, 유동성, 위험 허용 범위 등)
   으로 논리적으로 결정될 수 있으면 supported를 true로 반환한다.
 - SCENARIO 이외에서 정답 선택지의 구체적인 금액, 금리, 비율과 기간이
@@ -264,6 +281,12 @@ def build_grounding_validation_prompt(
   위험 허용 범위 같은 핵심 조건이 부족하면 supported를 false로 반환한다.
 - distractor가 사실이지만 질문의 표현상 정답으로도 해석될 수 있거나
   정답과 구별할 기준이 부족하면 단일 정답 조건 위반이다.
+- 한 선택지의 문구가 다른 선택지를 포함하거나 두 선택지가 같은 상품 유형을
+  가리켜 둘 다 정답이 될 수 있으면 단일 정답 조건 위반이다.
+- 저위험·단기간 조건에서 근거 없이 큰 수익을 전제하거나, 목표 금액을 달성할 수
+  있다고 단정하면 시나리오 내부 일관성 위반이다.
+- 검색 근거에 실제로 등장하지 않는 영어 단어가 자유 서술 필드에 섞여 있으면
+  자연스러운 한국어 문장 조건 위반이다.
 - unsupported_claims에는 prompt, scenario_json, correct_answer_option과
   explanation 중 근거로 뒷받침되지 않는 주장만 작성한다.
 - unsupported_claims에서 의도적인 오답 선택지는 제외한다.
@@ -297,9 +320,17 @@ def _build_grounding_validation_target(
     if correct_answer_option is None:
         raise ValueError("정답 선택지를 찾을 수 없습니다.")
 
+    expected_truth_value = None
+
+    if quiz.question_type == QuestionType.TRUE_FALSE:
+        expected_truth_value = (
+            "TRUE" if quiz.correct_answer.option_id == "O" else "FALSE"
+        )
+
     return {
         "usage_type": quiz.usage_type.value,
         "question_type": quiz.question_type.value,
+        "expected_truth_value": expected_truth_value,
         "prompt": quiz.prompt,
         "scenario_json": (
             quiz.scenario_json.model_dump(mode="json")

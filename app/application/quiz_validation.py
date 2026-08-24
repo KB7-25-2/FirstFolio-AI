@@ -12,6 +12,47 @@ _NUMERIC_FINANCIAL_CLAIM_PATTERN = re.compile(
     r"(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*"
     r"(?:조\s*원|억\s*원|만\s*원|천\s*원|원|%|퍼센트|개월|년|일|시간|회)"
 )
+_ENGLISH_WORD_PATTERN = re.compile(r"[A-Za-z][A-Za-z'-]*")
+_OPTION_TEXT_SEPARATOR_PATTERN = re.compile(r"[\W_]+", re.UNICODE)
+_CONTENT_WORD_PATTERN = re.compile(r"[가-힣A-Za-z0-9]+")
+_KOREAN_COUNT_PATTERN = re.compile(
+    r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*가지"
+)
+_CONTENT_WORD_STOPWORDS = {
+    "가장",
+    "것은",
+    "대한",
+    "대해",
+    "따라",
+    "통해",
+    "한다",
+    "있다",
+    "없다",
+    "이다",
+}
+_KOREAN_PARTICLE_SUFFIXES = (
+    "이다",
+    "으로",
+    "에서",
+    "에게",
+    "까지",
+    "부터",
+    "처럼",
+    "보다",
+    "은",
+    "는",
+    "이",
+    "가",
+    "을",
+    "를",
+    "에",
+    "의",
+    "로",
+    "과",
+    "와",
+    "도",
+    "만",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +101,16 @@ def _numeric_grounding_targets(quiz: Quiz) -> tuple[str, ...]:
     if quiz.question_type == QuestionType.SCENARIO:
         return ()
 
-    targets = [quiz.prompt]
+    targets = []
+
+    # X가 정답인 OX 문항의 prompt는 의도적으로 거짓인 문장이다. 근거에 없는
+    # 수치가 들어 있다는 이유만으로 코드 단계에서 차단하지 않고, explanation이
+    # 근거의 실제 수치로 올바르게 반박하는지를 grounding 검증에 맡긴다.
+    if not (
+        quiz.question_type == QuestionType.TRUE_FALSE
+        and quiz.correct_answer.option_id == "X"
+    ):
+        targets.append(quiz.prompt)
 
     correct_answer_option = next(
         (
@@ -85,6 +135,162 @@ def _normalize_numeric_claim(claim: str) -> str:
         for character in normalized
         if not character.isspace() and character != ","
     )
+
+
+def _find_unapproved_english_terms(
+    quiz: Quiz,
+    retrieved_chunks: Sequence[DocumentChunk],
+) -> tuple[str, ...]:
+    evidence_text = "\n".join(
+        chunk.content for chunk in retrieved_chunks[:5]
+    ).casefold()
+    unapproved_terms: list[str] = []
+
+    for text in _quiz_free_texts(quiz):
+        for match in _ENGLISH_WORD_PATTERN.finditer(text):
+            term = match.group()
+
+            if len(term) < 2 or term.casefold() in evidence_text:
+                continue
+
+            if term not in unapproved_terms:
+                unapproved_terms.append(term)
+
+    return tuple(unapproved_terms)
+
+
+def _quiz_free_texts(quiz: Quiz) -> tuple[str, ...]:
+    texts = [
+        quiz.prompt,
+        quiz.explanation,
+        *(option.text for option in quiz.options),
+    ]
+
+    if quiz.scenario_json is not None:
+        scenario = quiz.scenario_json
+        texts.extend(
+            [
+                scenario.title,
+                scenario.persona.name,
+                scenario.persona.age,
+                scenario.persona.job,
+                scenario.requirements.assets,
+                scenario.requirements.risk,
+                scenario.requirements.goal,
+                scenario.narrative,
+                scenario.market.title,
+                *scenario.market.bullets,
+                *scenario.constraints,
+                scenario.paper_title,
+            ]
+        )
+
+    return tuple(texts)
+
+
+def _normalize_option_text(text: str) -> str:
+    return _OPTION_TEXT_SEPARATOR_PATTERN.sub("", text).casefold()
+
+
+def _find_overlapping_option_text_error(quiz: Quiz) -> str | None:
+    if quiz.question_type == QuestionType.TRUE_FALSE:
+        return None
+
+    normalized_texts = [_normalize_option_text(option.text) for option in quiz.options]
+
+    if len(normalized_texts) != len(set(normalized_texts)):
+        return "duplicate_option_text"
+
+    for index, left in enumerate(normalized_texts):
+        if len(left) < 3:
+            continue
+
+        for right in normalized_texts[index + 1 :]:
+            if len(right) >= 3 and (left in right or right in left):
+                return "overlapping_option_text"
+
+    return None
+
+
+def _normalize_content_words(text: str) -> set[str]:
+    words: set[str] = set()
+
+    for match in _CONTENT_WORD_PATTERN.finditer(text):
+        word = match.group().casefold()
+
+        for suffix in _KOREAN_PARTICLE_SUFFIXES:
+            if word.endswith(suffix) and len(word) > len(suffix) + 1:
+                word = word[: -len(suffix)]
+                break
+
+        if len(word) >= 2 and word not in _CONTENT_WORD_STOPWORDS:
+            words.add(word)
+
+    return words
+
+
+def _citation_support_target(quiz: Quiz) -> str | None:
+    if quiz.question_type == QuestionType.TRUE_FALSE:
+        return quiz.explanation if quiz.correct_answer.option_id == "X" else quiz.prompt
+
+    return next(
+        (
+            option.text
+            for option in quiz.options
+            if option.option_id == quiz.correct_answer.option_id
+        ),
+        None,
+    )
+
+
+def _citations_directly_support_answer(quiz: Quiz) -> bool:
+    support_target = _citation_support_target(quiz)
+
+    # 정답 선택지를 못 찾는 경우는 구조 검증에서 별도로 잡는다.
+    if support_target is None:
+        return True
+
+    target_words = _normalize_content_words(support_target)
+    citation_words = _normalize_content_words(
+        " ".join(citation.evidence_text for citation in quiz.citations)
+    )
+
+    return not target_words or bool(target_words & citation_words)
+
+
+def _find_unsupported_citation_counts(quiz: Quiz) -> tuple[str, ...]:
+    citation_counts = {
+        "".join(match.group().split())
+        for citation in quiz.citations
+        for match in _KOREAN_COUNT_PATTERN.finditer(citation.evidence_text)
+    }
+    unsupported_counts: list[str] = []
+
+    targets = [quiz.explanation]
+
+    if not (
+        quiz.question_type == QuestionType.TRUE_FALSE
+        and quiz.correct_answer.option_id == "X"
+    ):
+        targets.append(quiz.prompt)
+
+    if quiz.question_type != QuestionType.TRUE_FALSE:
+        support_target = _citation_support_target(quiz)
+
+        if support_target is not None:
+            targets.append(support_target)
+
+    for target in targets:
+        for match in _KOREAN_COUNT_PATTERN.finditer(target):
+            normalized_count = "".join(match.group().split())
+
+            if (
+                normalized_count not in citation_counts
+                and normalized_count not in unsupported_counts
+            ):
+                unsupported_counts.append(normalized_count)
+
+    return tuple(unsupported_counts)
 
 
 def shuffle_quiz_options(
@@ -250,6 +456,11 @@ def validate_quiz_rules(
     if quiz.correct_answer.option_id not in option_ids:
         answer_errors.append("correct_answer_not_found")
 
+    option_text_error = _find_overlapping_option_text_error(quiz)
+
+    if option_text_error is not None:
+        answer_errors.append(option_text_error)
+
     if not quiz.explanation.strip():
         answer_errors.append("explanation_required")
 
@@ -258,6 +469,11 @@ def validate_quiz_rules(
             answer_errors.append("scenario_required")
     elif quiz.scenario_json is not None:
         answer_errors.append("scenario_not_allowed")
+
+    answer_errors.extend(
+        f"unapproved_english_term:{term}"
+        for term in _find_unapproved_english_terms(quiz, retrieved_chunks)
+    )
 
     top_chunks_by_key = {chunk.chunk_key: chunk for chunk in retrieved_chunks[:5]}
 
@@ -273,6 +489,15 @@ def validate_quiz_rules(
 
         if citation.evidence_text not in chunk.content:
             citation_errors.append(f"citation_evidence_not_found:{citation.chunk_key}")
+
+    if not citation_errors and not _citations_directly_support_answer(quiz):
+        citation_errors.append("citation_not_supporting_answer")
+
+    if not citation_errors:
+        citation_errors.extend(
+            f"citation_count_not_supported:{count}"
+            for count in _find_unsupported_citation_counts(quiz)
+        )
 
     normalized_prompt = normalize_quiz_prompt(quiz.prompt)
     normalized_existing_prompts = {

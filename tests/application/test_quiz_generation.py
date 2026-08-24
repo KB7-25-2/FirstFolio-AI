@@ -53,7 +53,7 @@ def _quiz(
         correct_answer = {"option_id": "O"}
     else:
         options = [
-            {"option_id": "1", "text": "선택지 1"},
+            {"option_id": "1", "text": "예금은 금융기관에 돈을 맡기는 금융상품이다"},
             {"option_id": "2", "text": "선택지 2"},
             {"option_id": "3", "text": "선택지 3"},
             {"option_id": "4", "text": "선택지 4"},
