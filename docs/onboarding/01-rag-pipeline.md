@@ -96,8 +96,8 @@ RAG는 **Retrieval-Augmented Generation**, 우리말로 "검색으로 보강한 
 
 ```python
 # app/application/document_registration.py:58-67
-version_id = upload_text_object(...)      # 1) S3에 원본 업로드
-stored_content = download_text_object(...) # 2) 방금 올린 걸 다시 내려받음
+version_id = upload_text_object(...)  # 1) S3에 원본 업로드
+stored_content = download_text_object(...)  # 2) 방금 올린 걸 다시 내려받음
 ```
 
 ### 왜 올리고 나서 다시 내려받는가?
@@ -171,7 +171,7 @@ def create_default_chunker_registry() -> DocumentChunkerRegistry:
             "textbook": TextbookChunker(paragraph_chunker),
             "news": NewsChunker(paragraph_chunker),
         },
-        fallback_chunker=paragraph_chunker,   # 모르는 유형은 일반 문단 청킹
+        fallback_chunker=paragraph_chunker,  # 모르는 유형은 일반 문단 청킹
     )
 ```
 
@@ -199,9 +199,9 @@ def create_default_chunker_registry() -> DocumentChunkerRegistry:
 
 ```python
 # app/application/chunkers/textbook.py:11-16
-_CHAPTER_HEADING_PATTERN    # "제3장 ..." 또는 "III. ..."
-_SECTION_HEADING_PATTERN    # "3.1 ..." 또는 "3. ..."
-_SUBSECTION_HEADING_PATTERN # "1) ..."
+_CHAPTER_HEADING_PATTERN  # "제3장 ..." 또는 "III. ..."
+_SECTION_HEADING_PATTERN  # "3.1 ..." 또는 "3. ..."
+_SUBSECTION_HEADING_PATTERN  # "1) ..."
 ```
 
 동작을 그림으로 보면:
@@ -287,14 +287,17 @@ def _should_merge_forward(content: str) -> bool:
 ```python
 # app/application/chunkers/merge.py:41-53
 for sequence, group in enumerate(groups):
-    anchor = group[0]     # 첫 청크(제목)를 기준으로
-    last = group[-1]      # heading·metadata는 마지막 것을 씀
-    merged_chunks.append(replace(anchor,
-        chunk_key=f"{anchor.document_id}:{sequence}",  # 키 재발급
-        content="\n\n".join(...),
-        heading=last.heading,
-        metadata=last.metadata,
-    ))
+    anchor = group[0]  # 첫 청크(제목)를 기준으로
+    last = group[-1]  # heading·metadata는 마지막 것을 씀
+    merged_chunks.append(
+        replace(
+            anchor,
+            chunk_key=f"{anchor.document_id}:{sequence}",  # 키 재발급
+            content="\n\n".join(...),
+            heading=last.heading,
+            metadata=last.metadata,
+        )
+    )
 ```
 
 두 가지 미묘한 결정이 있다.
@@ -339,10 +342,17 @@ for sequence, group in enumerate(groups):
 ```python
 # app/application/chunkers/news.py:7-19
 _HEADER_FIELDS = (
-    ("문서유형", "document_type"), ("제목", "title"), ("언론사", "publisher"),
-    ("카테고리", "category"),     ("작성자", "author"), ("발행일", "published_at"),
-    ("기준시점", "reference_at"), ("수집일", "collected_at"), ("기사 ID", "article_id"),
-    ("원문 URL", "source_url"),   ("본문 형태", "body_type"),
+    ("문서유형", "document_type"),
+    ("제목", "title"),
+    ("언론사", "publisher"),
+    ("카테고리", "category"),
+    ("작성자", "author"),
+    ("발행일", "published_at"),
+    ("기준시점", "reference_at"),
+    ("수집일", "collected_at"),
+    ("기사 ID", "article_id"),
+    ("원문 URL", "source_url"),
+    ("본문 형태", "body_type"),
 )
 ```
 
@@ -438,10 +448,13 @@ BM25는 "단어 목록"을 입력으로 받는다. 영어는 띄어쓰기로 자
 # app/infrastructure/tokenizers/kiwi.py:5-25
 searchable_tag_prefixes = ("N", "VV", "VA", "VX", "M", "XR", "SL", "SH", "SN")
 
+
 def tokenize(self, text: str) -> list[str]:
-    return [token.form.lower()
-            for token in self._kiwi.tokenize(text)
-            if token.tag.startswith(self.searchable_tag_prefixes)]
+    return [
+        token.form.lower()
+        for token in self._kiwi.tokenize(text)
+        if token.tag.startswith(self.searchable_tag_prefixes)
+    ]
 ```
 
 **품사 필터가 핵심이다.** 이 접두사들이 무슨 뜻인지:
@@ -471,8 +484,9 @@ def tokenize(self, text: str) -> list[str]:
 
 ```python
 # app/infrastructure/search/bm25.py:22-29
-tokenized_chunks = [self._tokenizer.tokenize(chunk.searchable_text())
-                    for chunk in self._chunks]
+tokenized_chunks = [
+    self._tokenizer.tokenize(chunk.searchable_text()) for chunk in self._chunks
+]
 self._index = BM25Okapi(tokenized_chunks)
 ```
 
@@ -572,8 +586,10 @@ FAISS는 파일 2개로 저장된다.
 
 ```python
 # app/infrastructure/search/faiss.py:58-73
-faiss.write_index(self._index, str(index_file))     # 벡터 본체 (.faiss)
-mapping_file.write_text(json.dumps({"chunk_keys": self._chunk_keys}))  # 순서→chunk_key (.json)
+faiss.write_index(self._index, str(index_file))  # 벡터 본체 (.faiss)
+mapping_file.write_text(
+    json.dumps({"chunk_keys": self._chunk_keys})
+)  # 순서→chunk_key (.json)
 ```
 
 **매핑 파일이 왜 필요한가?** FAISS는 벡터에 번호(0,1,2,...)만 매긴다.
@@ -644,8 +660,8 @@ RRF는 **Reciprocal Rank Fusion**, "역순위 융합"이다.
 
 ```python
 # app/application/search/hybrid.py:59, 79
-rank_score = self._settings.bm25_weight  / (rrf_k + rank)   # 0.7 / (60 + 순위)
-rank_score = self._settings.faiss_weight / (rrf_k + rank)   # 0.3 / (60 + 순위)
+rank_score = self._settings.bm25_weight / (rrf_k + rank)  # 0.7 / (60 + 순위)
+rank_score = self._settings.faiss_weight / (rrf_k + rank)  # 0.3 / (60 + 순위)
 ```
 
 같은 청크가 양쪽에 다 나오면 **점수를 더한다**:
@@ -683,10 +699,10 @@ k=60 (우리 설정):     1등 0.0164, 2등 0.0161, 3등 0.0159 ← 상위권 �
 
 ```python
 # app/application/search/hybrid.py:29-47
-candidate_top_k = 20   # 각 엔진에서 20개씩 가져와서
+candidate_top_k = 20  # 각 엔진에서 20개씩 가져와서
 ...
 # app/application/search/hybrid.py:101
-return combined_results[:5]   # 융합 후 5개만 반환
+return combined_results[:5]  # 융합 후 5개만 반환
 ```
 
 각 엔진에서 5개씩만 가져오면 **융합할 여지가 없다.**
@@ -749,7 +765,7 @@ FAISS가 순위를 흔들어서 BM25가 top-5에 넣었던 정답 하나를 밀�
 
 ```python
 # app/application/quiz_batch.py:38
-topic=sub_chapter.title,     # "예금과 적금의 차이" 같은 정형화된 제목
+topic = (sub_chapter.title,)  # "예금과 적금의 차이" 같은 정형화된 제목
 ```
 
 이 제목은 교과서 용어를 그대로 쓴다. 그래서 **BM25가 유리한 게 당연하다.**
@@ -783,8 +799,11 @@ FAISS를 붙여서 잃은 게 얼마인지 우리는 숫자로 안다.
 ```python
 # app/application/search/hybrid.py:85-93
 excluded_chunk_keys = set(exclude_chunk_keys)
-combined_results = [... for chunk_key, score in scores_by_chunk_key.items()
-                    if chunk_key not in excluded_chunk_keys]
+combined_results = [
+    ...
+    for chunk_key, score in scores_by_chunk_key.items()
+    if chunk_key not in excluded_chunk_keys
+]
 ```
 
 같은 주제로 문항을 3개 만들면, 검색 결과가 매번 똑같아서 **거의 같은 문제 3개**가 나온다.

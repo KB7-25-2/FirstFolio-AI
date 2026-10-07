@@ -116,9 +116,7 @@ build_quiz_generation_prompt()
 ```python
 # app/application/quiz_generation.py:105-109
 true_false_target = (
-    self._rng.choice(["O", "X"])
-    if question_type == QuestionType.TRUE_FALSE
-    else None
+    self._rng.choice(["O", "X"]) if question_type == QuestionType.TRUE_FALSE else None
 )
 ```
 
@@ -132,7 +130,7 @@ true_false_target = (
 # app/application/quiz_prompts.py:26-31
 truth_label = "참" if target_answer == "O" else "거짓"
 f'이번 문제의 correct_answer.option_id는 반드시 "{target_answer}"이어야 하며, '
-f'prompt는 검색 근거로 확인되는 {truth_label} 문장으로 작성한다.'
+f"prompt는 검색 근거로 확인되는 {truth_label} 문장으로 작성한다."
 ```
 
 #### X가 정답일 때의 연쇄 문제
@@ -153,8 +151,10 @@ f'prompt는 검색 근거로 확인되는 {truth_label} 문장으로 작성한�
 # X가 정답인 OX 문항의 prompt는 의도적으로 거짓인 문장이다. 근거에 없는
 # 수치가 들어 있다는 이유만으로 코드 단계에서 차단하지 않고, explanation이
 # 근거의 실제 수치로 올바르게 반박하는지를 grounding 검증에 맡긴다.
-if not (quiz.question_type == QuestionType.TRUE_FALSE
-        and quiz.correct_answer.option_id == "X"):
+if not (
+    quiz.question_type == QuestionType.TRUE_FALSE
+    and quiz.correct_answer.option_id == "X"
+):
     targets.append(quiz.prompt)
 ```
 
@@ -207,9 +207,9 @@ SCENARIO는 "민서(28세, 회사원)가 3년 뒤 전세보증금이 필요한�
 # app/domain/quiz.py:71-81
 class QuizScenario(BaseModel):
     title: str
-    persona: ScenarioPersona      # ← narrative보다 먼저
+    persona: ScenarioPersona  # ← narrative보다 먼저
     requirements: ScenarioRequirements
-    narrative: str                # ← persona 다음
+    narrative: str  # ← persona 다음
     market: ScenarioMarket
     constraints: list[str]
     paper_title: str
@@ -380,13 +380,15 @@ if quiz.question_type == QuestionType.SCENARIO:
 
 ```python
 # app/infrastructure/openai_quiz.py:108-126
-def _build_citation_model(chunk_key: str, candidates: Sequence[str]) -> type[QuizCitation]:
+def _build_citation_model(
+    chunk_key: str, candidates: Sequence[str]
+) -> type[QuizCitation]:
     evidence_text_type = Literal.__getitem__(tuple(candidates))
     return create_model(
         f"Citation_{safe_name}",
         __base__=QuizCitation,
-        chunk_key=(Literal[chunk_key], ...),          # 이 청크 키만 허용
-        evidence_text=(evidence_text_type, ...),      # 이 문장들만 허용
+        chunk_key=(Literal[chunk_key], ...),  # 이 청크 키만 허용
+        evidence_text=(evidence_text_type, ...),  # 이 문장들만 허용
     )
 ```
 
@@ -496,7 +498,7 @@ _UNSAFE_LITERAL_PATTERN = re.compile(r'["\\]')
 ```python
 def _find_evidence_ignoring_whitespace(*, content: str, evidence_text: str) -> str:
     if evidence_text in content:
-        return evidence_text            # 완전 일치면 그대로
+        return evidence_text  # 완전 일치면 그대로
     # 공백을 모두 제거한 상태로 위치를 찾고, 원문의 해당 구간을 그대로 반환
 ```
 
@@ -555,9 +557,9 @@ quiz = stamp_scenario_market_reference_at(quiz=quiz, now=datetime.now(UTC))
 ```python
 # app/application/quiz_validation.py:431-435
 expected_option_ids = {
-    QuestionType.TRUE_FALSE:    ["O", "X"],
+    QuestionType.TRUE_FALSE: ["O", "X"],
     QuestionType.SINGLE_CHOICE: ["1", "2", "3", "4"],
-    QuestionType.SCENARIO:      ["1", "2", "3", "4"],
+    QuestionType.SCENARIO: ["1", "2", "3", "4"],
 }[quiz.question_type]
 ```
 
@@ -574,15 +576,16 @@ expected_option_ids = {
 # app/application/quiz_validation.py:195-212
 def _find_overlapping_option_text_error(quiz: Quiz) -> str | None:
     if quiz.question_type == QuestionType.TRUE_FALSE:
-        return None                                    # O/X는 대상 아님
+        return None  # O/X는 대상 아님
     normalized_texts = [_normalize_option_text(o.text) for o in quiz.options]
     if len(normalized_texts) != len(set(normalized_texts)):
-        return "duplicate_option_text"                 # 완전 동일
+        return "duplicate_option_text"  # 완전 동일
     for index, left in enumerate(normalized_texts):
-        if len(left) < 3: continue
-        for right in normalized_texts[index + 1:]:
+        if len(left) < 3:
+            continue
+        for right in normalized_texts[index + 1 :]:
             if len(right) >= 3 and (left in right or right in left):
-                return "overlapping_option_text"       # 한쪽이 다른 쪽을 포함
+                return "overlapping_option_text"  # 한쪽이 다른 쪽을 포함
     return None
 ```
 
@@ -613,7 +616,7 @@ def _find_unapproved_english_terms(quiz, retrieved_chunks) -> tuple[str, ...]:
         for match in _ENGLISH_WORD_PATTERN.finditer(text):
             term = match.group()
             if len(term) < 2 or term.casefold() in evidence_text:
-                continue                          # 근거에 있으면 통과
+                continue  # 근거에 있으면 통과
             unapproved_terms.append(term)
 ```
 
@@ -662,12 +665,13 @@ if not citation_errors and not _citations_directly_support_answer(quiz):
 ```python
 # app/application/quiz_validation.py:246-258
 def _citations_directly_support_answer(quiz: Quiz) -> bool:
-    support_target = _citation_support_target(quiz)      # 정답 선택지 (X면 explanation)
+    support_target = _citation_support_target(quiz)  # 정답 선택지 (X면 explanation)
     if support_target is None:
         return True
     target_words = _normalize_content_words(support_target)
     citation_words = _normalize_content_words(
-        " ".join(c.evidence_text for c in quiz.citations))
+        " ".join(c.evidence_text for c in quiz.citations)
+    )
     return not target_words or bool(target_words & citation_words)
 ```
 
@@ -723,7 +727,9 @@ def _normalize_content_words(text: str) -> set[str]:
 
 ```python
 # app/application/quiz_validation.py:18-20, 261-293
-_KOREAN_COUNT_PATTERN = re.compile(r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*가지")
+_KOREAN_COUNT_PATTERN = re.compile(
+    r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*가지"
+)
 ```
 
 `"금융 상품은 다섯 가지로 분류된다"`라고 했는데 근거엔 네 가지만 있는 경우를 잡는다.
@@ -743,7 +749,8 @@ _KOREAN_COUNT_PATTERN = re.compile(r"(?:한|두|세|네|다섯|여섯|일곱|여
 ```python
 def normalize_quiz_prompt(prompt: str) -> str:
     without_punctuation = "".join(
-        c for c in prompt if not unicodedata.category(c).startswith("P"))
+        c for c in prompt if not unicodedata.category(c).startswith("P")
+    )
     return " ".join(without_punctuation.split())
 ```
 
@@ -755,7 +762,7 @@ def normalize_quiz_prompt(prompt: str) -> str:
 
 ```python
 # app/application/quiz_deduplication.py:30-31
-if _cosine_similarity(prompt_vector, existing_vector) >= threshold:   # 0.92
+if _cosine_similarity(prompt_vector, existing_vector) >= threshold:  # 0.92
     return existing_prompt
 ```
 
@@ -778,7 +785,8 @@ if _cosine_similarity(prompt_vector, existing_vector) >= threshold:   # 0.92
 # app/application/quiz_validation.py:11-14
 _NUMERIC_FINANCIAL_CLAIM_PATTERN = re.compile(
     r"(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*"
-    r"(?:조\s*원|억\s*원|만\s*원|천\s*원|원|%|퍼센트|개월|년|일|시간|회)")
+    r"(?:조\s*원|억\s*원|만\s*원|천\s*원|원|%|퍼센트|개월|년|일|시간|회)"
+)
 ```
 
 동작:
@@ -793,7 +801,7 @@ _NUMERIC_FINANCIAL_CLAIM_PATTERN = re.compile(
 
 ```python
 # app/application/quiz_validation.py:131-137
-normalized = unicodedata.normalize("NFKC", claim)   # 전각 숫자 → 반각
+normalized = unicodedata.normalize("NFKC", claim)  # 전각 숫자 → 반각
 return "".join(c for c in normalized if not c.isspace() and c != ",")
 ```
 
@@ -825,10 +833,10 @@ return "".join(c for c in normalized if not c.isspace() and c != ",")
 ```python
 # app/application/quiz_prompts.py:330-350
 return {
-    "expected_truth_value": expected_truth_value,   # "TRUE"/"FALSE"/None
+    "expected_truth_value": expected_truth_value,  # "TRUE"/"FALSE"/None
     "prompt": quiz.prompt,
-    "correct_answer_option": correct_answer_option.model_dump(),   # 정답만 분리
-    "distractor_options": [...],                                   # 오답만 분리
+    "correct_answer_option": correct_answer_option.model_dump(),  # 정답만 분리
+    "distractor_options": [...],  # 오답만 분리
     "explanation": quiz.explanation,
     "citations": [...],
 }
@@ -904,8 +912,8 @@ QuizSource(
     chunk_key=chunk.chunk_key,
     title=chunk.title,
     heading=chunk.heading,
-    source_url=chunk.source_url,       # 뉴스 출처 링크
-    published_at=chunk.published_at,   # 뉴스 발행일
+    source_url=chunk.source_url,  # 뉴스 출처 링크
+    published_at=chunk.published_at,  # 뉴스 발행일
     evidence_text=citation.evidence_text,
 )
 ```
@@ -930,12 +938,14 @@ quiz = shuffle_quiz_options(quiz, rng=self._rng)
 
 ```python
 # app/application/quiz_validation.py:304-320
-target_option_ids = [o.option_id for o in quiz.options]   # ["1","2","3","4"] 유지
+target_option_ids = [o.option_id for o in quiz.options]  # ["1","2","3","4"] 유지
 shuffled_source_options = list(quiz.options)
-rng.shuffle(shuffled_source_options)                      # 텍스트만 섞음
-shuffled_options = [QuizOption(option_id=new_id, text=src.text)
-                    for new_id, src in zip(target_option_ids, shuffled_source_options)]
-new_correct_option_id = next(...)                         # 정답 ID 추적
+rng.shuffle(shuffled_source_options)  # 텍스트만 섞음
+shuffled_options = [
+    QuizOption(option_id=new_id, text=src.text)
+    for new_id, src in zip(target_option_ids, shuffled_source_options)
+]
+new_correct_option_id = next(...)  # 정답 ID 추적
 ```
 
 **ID는 `1,2,3,4` 순서를 유지하고 텍스트만 재배치**한 뒤 정답 ID를 다시 계산한다.
@@ -964,8 +974,8 @@ TRUE_FALSE는 섞지 않는다 — O/X 순서가 바뀌면 이상하다.
 # app/application/quiz_batch.py:109-113
 for chunk in chunks:
     if chunk.published_at is None:
-        continue                              # 교과서는 이 값이 없다
-    articles.setdefault(chunk.document_id, chunk)   # 문서당 1개만
+        continue  # 교과서는 이 값이 없다
+    articles.setdefault(chunk.document_id, chunk)  # 문서당 1개만
 ```
 
 `published_at` 유무로 뉴스/교과서를 구분한다. `TextbookChunker`는 이 값을 안 채운다.
@@ -998,7 +1008,7 @@ except Exception:
 
 ```python
 # app/domain/quiz.py:180
-attempted_quiz: Quiz | None = None      # 실패했지만 생성은 된 문항
+attempted_quiz: Quiz | None = None  # 실패했지만 생성은 된 문항
 ```
 
 **왜 남기나**: 어떤 문항이 왜 차단됐는지 봐야 프롬프트를 고칠 수 있다.
@@ -1011,9 +1021,12 @@ attempted_quiz: Quiz | None = None      # 실패했지만 생성은 된 문항
 # app/domain/quiz.py:201-225
 @model_validator(mode="after")
 def validate_status_payload(self):
-    if self.status == SUCCEEDED:  valid = result is not None and error is None and duplicate is None
-    elif self.status == FAILED:   valid = result is None and error is not None and duplicate is None
-    else:                         valid = result is None and error is not None and duplicate is not None
+    if self.status == SUCCEEDED:
+        valid = result is not None and error is None and duplicate is None
+    elif self.status == FAILED:
+        valid = result is None and error is not None and duplicate is None
+    else:
+        valid = result is None and error is not None and duplicate is not None
 ```
 
 `SUCCEEDED`인데 `result`가 없는 모순된 레코드를 만들 수 없다.
@@ -1030,14 +1043,16 @@ for record in records:
     try:
         payload = to_be_quiz_payload(record)
     except QuizExportError:
-        continue                     # 실패 항목은 전송 대상에서 조용히 제외
-return [client.send_batch(batch_id_factory(), chunk)
-        for chunk in _chunk(exportable_items, 100)]
+        continue  # 실패 항목은 전송 대상에서 조용히 제외
+return [
+    client.send_batch(batch_id_factory(), chunk)
+    for chunk in _chunk(exportable_items, 100)
+]
 ```
 
 - **성공 레코드만** 전송한다.
 - **100개씩 나눠** 보낸다 — 한 요청이 너무 커지지 않게.
-- BE는 `DRAFT` 상태로 받고, 사람이 검수 후 `PUBLISHED`로 바꾼다.
+- BE는 `REVIEW` 상태로 저장하고, 관리자가 검수 후 `PUBLISHED`로 바꾼다.
 
 ### AI와 BE의 책임 경계
 

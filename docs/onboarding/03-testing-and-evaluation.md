@@ -79,8 +79,9 @@ docker compose exec -T ai-api python -m pytest
 ```python
 # app/application/ports/quiz_model.py
 class QuizModelClient(Protocol):
-    def generate_quiz(self, prompt: str,
-                      citation_candidates: Mapping[str, Sequence[str]]) -> QuizModelResult: ...
+    def generate_quiz(
+        self, prompt: str, citation_candidates: Mapping[str, Sequence[str]]
+    ) -> QuizModelResult: ...
     def validate_grounding(self, prompt: str) -> GroundingModelResult: ...
 ```
 
@@ -129,7 +130,7 @@ Java의 인터페이스처럼 `implements`를 선언할 필요가 없다.
 missing_chunk_keys = [k for k in chunk_keys if k not in chunks_by_key]
 if missing_chunk_keys:
     raise ChunkNotFoundError(...)
-return [chunks_by_key[chunk_key] for chunk_key in chunk_keys]   # 요청 순서 유지
+return [chunks_by_key[chunk_key] for chunk_key in chunk_keys]  # 요청 순서 유지
 ```
 
 이 동작을 `Mock`으로 흉내내려면 매 테스트마다 `side_effect`를 짜야 한다.
@@ -247,7 +248,7 @@ SKIPPED tests/infrastructure/repositories/test_mysql_repositories_integration.py
 # tests/application/test_quiz_validation.py:76-81
 def _quiz(question_type: str = "SINGLE_CHOICE", **changes: object) -> Quiz:
     payload = _quiz_payload(question_type)
-    payload.update(changes)              # ← 바꾸고 싶은 것만 덮어쓰기
+    payload.update(changes)  # ← 바꾸고 싶은 것만 덮어쓰기
     return Quiz.model_validate(payload)
 ```
 
@@ -326,10 +327,10 @@ def test_build_scenario_prompt_requires_natural_korean_persona_name() -> None:
 
 ```python
 # tests/application/search/test_hybrid.py
-test_return_empty_list_when_both_searches_have_no_results()   # 둘 다 결과 0
-test_skip_faiss_search_when_faiss_weight_is_zero()            # 가중치 0
-test_skip_bm25_search_when_bm25_weight_is_zero()              # 가중치 0
-test_raise_error_when_faiss_chunk_key_does_not_exist()        # 정합성 깨짐
+test_return_empty_list_when_both_searches_have_no_results()  # 둘 다 결과 0
+test_skip_faiss_search_when_faiss_weight_is_zero()  # 가중치 0
+test_skip_bm25_search_when_bm25_weight_is_zero()  # 가중치 0
+test_raise_error_when_faiss_chunk_key_does_not_exist()  # 정합성 깨짐
 ```
 
 가중치 0 테스트는 **실용적 목적**이 있다.
@@ -338,7 +339,9 @@ test_raise_error_when_faiss_chunk_key_does_not_exist()        # 정합성 깨짐
 
 ```python
 # app/application/search/hybrid.py:40-47
-faiss_results = (self._faiss_search.search(...) if self._settings.faiss_weight > 0 else [])
+faiss_results = (
+    self._faiss_search.search(...) if self._settings.faiss_weight > 0 else []
+)
 ```
 
 가중치가 0인데 검색을 실행하면 결과가 어차피 0점이라 무의미한데
@@ -464,6 +467,7 @@ Hit@5/MRR은 표준 지표라 **"정답 청크"만** 본다.
 def _is_usable(content: str) -> bool:
     stripped = content.strip()
     return len(stripped) >= 50 and stripped.endswith((".", "!", "?"))
+
 
 def _is_heading_fragment(content: str) -> bool:
     return bool(_HEADING_PATTERN.match(stripped)) or not stripped.endswith(...)
