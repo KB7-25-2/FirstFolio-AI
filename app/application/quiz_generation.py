@@ -1,5 +1,6 @@
 import random
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from time import monotonic_ns
 
 from app.application.ports.chunk_repository import ChunkRepository
@@ -16,6 +17,7 @@ from app.application.quiz_validation import (
     align_quiz_citation_evidence,
     find_unsupported_numeric_claims,
     shuffle_quiz_options,
+    stamp_scenario_market_reference_at,
     validate_quiz_rules,
 )
 from app.application.search.hybrid import HybridSearch
@@ -120,6 +122,10 @@ class QuizGenerationService:
         quiz = align_quiz_citation_evidence(
             quiz=generation_result.quiz,
             retrieved_chunks=retrieved_chunks,
+        )
+        quiz = stamp_scenario_market_reference_at(
+            quiz=quiz,
+            now=datetime.now(UTC),
         )
         rule_validation = validate_quiz_rules(
             quiz=quiz,

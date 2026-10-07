@@ -1,5 +1,6 @@
 import random
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
 
@@ -8,6 +9,7 @@ from app.application.quiz_validation import (
     find_unsupported_numeric_claims,
     normalize_quiz_prompt,
     shuffle_quiz_options,
+    stamp_scenario_market_reference_at,
     validate_quiz_rules,
 )
 from app.domain.chunk import DocumentChunk
@@ -25,7 +27,7 @@ def _quiz_payload(
         correct_answer = {"option_id": "O"}
     else:
         options = [
-            {"option_id": "1", "text": "선택지 1"},
+            {"option_id": "1", "text": "예금은 금융기관에 돈을 맡기는 금융상품이다"},
             {"option_id": "2", "text": "선택지 2"},
             {"option_id": "3", "text": "선택지 3"},
             {"option_id": "4", "text": "선택지 4"},
@@ -48,6 +50,7 @@ def _quiz_payload(
             },
             "market": {
                 "title": "시장 정보",
+                "reference_at": "2026-08-10T00:00:00Z",
                 "bullets": ["검증된 시장 정보"],
             },
             "constraints": ["원금 손실을 피해야 한다."],
@@ -273,6 +276,7 @@ def test_reject_blank_explanation() -> None:
                 },
                 "market": {
                     "title": "시장 정보",
+                    "reference_at": "2026-08-10T00:00:00Z",
                     "bullets": ["검증된 시장 정보"],
                 },
                 "constraints": [],
@@ -394,6 +398,27 @@ def test_do_not_align_citation_when_non_whitespace_text_differs() -> None:
     assert result.errors == ("citation_evidence_not_found:47:37",)
 
 
+def test_stamp_scenario_market_reference_at_overrides_model_value() -> None:
+    quiz = _quiz(question_type="SCENARIO")
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+
+    stamped = stamp_scenario_market_reference_at(quiz=quiz, now=now)
+
+    assert stamped.scenario_json.market.reference_at == now
+    assert quiz.scenario_json.market.reference_at != now
+
+
+def test_stamp_scenario_market_reference_at_skips_non_scenario_quiz() -> None:
+    quiz = _quiz(question_type="SINGLE_CHOICE")
+
+    stamped = stamp_scenario_market_reference_at(
+        quiz=quiz,
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert stamped == quiz
+
+
 def test_normalize_whitespace_and_punctuation() -> None:
     assert normalize_quiz_prompt("예금은...  무엇인가?") == "예금은 무엇인가"
 
@@ -448,6 +473,7 @@ def test_scenario_skips_all_numeric_check() -> None:
             },
             "market": {
                 "title": "시장 정보",
+                "reference_at": "2026-08-10T00:00:00Z",
                 "bullets": ["검증된 시장 정보"],
             },
             "constraints": [
